@@ -49,6 +49,8 @@ export abstract class Level {
 
   /** called when the level becomes the active one (root is already in the scene) */
   enter(): void {}
+  /** called once the arrival flight has finished and the camera is free again */
+  arrived(): void {}
   /** called right before the level is removed from the scene */
   exit(): void {}
   /** per-frame; dt in seconds, t = seconds since app start */

@@ -3,11 +3,13 @@ import { SceneManager } from './scene/SceneManager';
 import { createLevels } from './scene/levels';
 import { LEVELS, levelIndex, useCore } from './state/store';
 import { PANELS } from './ui/panels';
+import { useHead } from './state/headState';
+import { useBrain } from './state/brainState';
 import { DiveHint, HoverTip, Loading, ScaleRail, TopBar } from './ui/Chrome';
 import { Overlays } from './ui/Overlays';
 
 declare global {
-  interface Window { __brain?: { manager: SceneManager; core: typeof useCore } }
+  interface Window { __brain?: Record<string, unknown> & { manager: SceneManager; core: typeof useCore } }
 }
 
 export function App() {
@@ -24,7 +26,7 @@ export function App() {
     createLevels().forEach((l) => manager.register(l));
     const start = (new URLSearchParams(location.search).get('level') as typeof level) || 'head';
     void manager.start(LEVELS.some((l) => l.id === start) ? start : 'head');
-    window.__brain = { manager, core: useCore };
+    window.__brain = { manager, core: useCore, head: useHead, brain: useBrain };
     return () => manager.dispose();
   }, []);
 

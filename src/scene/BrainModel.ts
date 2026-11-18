@@ -62,6 +62,7 @@ interface Part {
 const TISSUE = new THREE.Color('#d39a90');
 const GREY = new THREE.Color('#8b8f9a');
 const DARK = new THREE.Color('#596072');
+const DIM = new THREE.Color('#6d7282');
 const tmpC = new THREE.Color();
 
 function glassMaterial() {
@@ -158,16 +159,20 @@ export class BrainModel {
         explodeDir: new THREE.Vector3(),
         targetColor: new THREE.Color(1, 1, 1), targetOpacity: 1, targetEmissive: 0, targetOffset: new THREE.Vector3(),
       };
-      if (cortex) {
-        // back faces act as a "cut surface" when a clipping plane slices the hemisphere
+      {
+        // Back faces act as the "cut surface" when a clipping plane slices a closed shape:
+        // drawn unlit and flat, they read as a filled cross-section.
+        const capColor = cortex ? new THREE.Color(0xeadfce) : new THREE.Color(area?.color ?? '#cfc7bd').multiplyScalar(0.82);
         const cap = new THREE.Mesh(
           geometry,
-          new THREE.MeshBasicMaterial({ color: 0xeadfce, side: THREE.BackSide, clippingPlanes: [this.clipPlane] }),
+          new THREE.MeshBasicMaterial({ color: capColor, side: THREE.BackSide, clippingPlanes: [this.clipPlane] }),
         );
         cap.visible = false;
         cap.raycast = () => {};
         fresh.add(cap);
         part.cap = cap;
+      }
+      if (cortex) {
         // depth pre-pass: when the cortex is see-through only its nearest surface is drawn,
         // which keeps the ghosted brain clean instead of a stack of overlapping sheets
         const pre = new THREE.Mesh(
@@ -305,7 +310,7 @@ export class BrainModel {
       if (p.cortex) {
         opacity *= v.cortexOpacity;
         if (sel && !selParts.has(p)) {
-          base.lerp(GREY, 0.72);
+          base.lerp(DIM, 0.78);
           if (selIsDeep) opacity *= 0.16;
         }
       } else if (sel && !selParts.has(p)) {
@@ -329,6 +334,9 @@ export class BrainModel {
       const want = useGlass ? this.glass : p.material;
       if (p.mesh.material !== want) p.mesh.material = want;
       if (p.cap) p.cap.visible = clipping && !useGlass && opacity > 0.98;
+      // open patches (exploded lobes) should show their inner face; sliced solids use the cap instead
+      const side = clipping ? THREE.FrontSide : THREE.DoubleSide;
+      if (p.material.side !== side) { p.material.side = side; p.material.needsUpdate = true; }
       if (immediate) {
         p.material.color.copy(p.targetColor);
         p.material.opacity = opacity;

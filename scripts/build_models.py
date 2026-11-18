@@ -132,7 +132,8 @@ def build_cortex():
         verts = to_scene(v2)
         normals = smooth_normals(verts, f2)
         shade = np.clip(0.86 - 0.52 * sulc2, 0.2, 1.0)  # gyri bright, sulci dark
-        col = np.repeat((shade * 255).astype(np.uint8)[:, None], 4, axis=1)
+        # stored linear (three.js reads vertex colours as linear), so darken with a gamma
+        col = np.repeat((shade ** 1.8 * 255).astype(np.uint8)[:, None], 4, axis=1)
         col[:, 3] = 255
         # region per face = majority of its vertex labels
         fl = lab2[f2]

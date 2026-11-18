@@ -40,6 +40,12 @@ export class BrainLevel extends Level {
     );
   }
 
+  arrived() {
+    // arriving with something already chosen (search, tour): bring it into view
+    const id = useCore.getState().selection.brain;
+    if (id) this.onSelection(id);
+  }
+
   exit() {
     this.unsub.forEach((u) => u());
     this.unsub = [];

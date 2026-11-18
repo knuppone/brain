@@ -90,6 +90,7 @@ export class SceneManager {
     this.bindEvents();
     this.resize();
     navigation.goTo = (level) => void this.goTo(level);
+    useCore.subscribe((s, p) => { if (s.panelOpen !== p.panelOpen) this.resize(); });
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
@@ -178,6 +179,7 @@ export class SceneManager {
     this.controls.minDistance = home.minDistance;
     this.controls.maxDistance = home.maxDistance;
     this.busy = false;
+    next.arrived();
     if (this.queued && this.queued !== id) {
       const q = this.queued;
       this.queued = null;
@@ -292,8 +294,21 @@ export class SceneManager {
     this.renderer.setSize(w, h);
     this.labels.setSize(w, h);
     this.camera.aspect = w / h;
-    // keep the subject comfortably framed on tall (phone) screens
-    this.camera.fov = w / h < 0.8 ? 46 : 32;
+    // Keep the subject centred in the part of the stage the UI leaves free: shift the
+    // projection instead of the camera so orbiting still feels centred on the subject.
+    const phone = w <= 860;
+    const open = useCore.getState().panelOpen;
+    const inset = phone
+      ? { left: 0, right: 0, top: 96, bottom: (open ? h * 0.42 : 0) + 56 }
+      : { left: 190, right: open ? 392 : 0, top: 40, bottom: 70 };
+    const freeW = w - inset.left - inset.right;
+    const freeH = h - inset.top - inset.bottom;
+    const dx = (inset.left - inset.right) / 2;
+    const dy = (inset.top - inset.bottom) / 2;
+    this.camera.setViewOffset(w, h, -dx, -dy, w, h);
+    // widen the field of view when the free area is small or narrow so the home framing still fits
+    const fit = Math.min(freeW / 820, freeH / 640, 1);
+    this.camera.fov = THREE.MathUtils.clamp(32 / Math.max(fit, 0.45), 32, 62);
     this.camera.updateProjectionMatrix();
   };
 

@@ -324,7 +324,7 @@ input[type='range']::-moz-range-thumb {
 
 /* tour card */
 .tour {
-  position: absolute; left: calc(var(--rail-w) + 40px); bottom: 84px; z-index: 7; width: min(400px, calc(100vw - 32px));
+  position: absolute; left: calc(var(--rail-w) + 40px); top: calc(var(--top-h) + 6px); z-index: 7; width: min(400px, calc(100vw - 32px));
   background: var(--panel-solid); border: 1px solid rgba(255, 184, 107, 0.35); border-radius: 16px; padding: 16px 18px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
 }
@@ -374,16 +374,18 @@ input[type='range']::-moz-range-thumb {
   .rail-item b { font-size: 11.5px; font-weight: 600; }
   .rail-item.active { background: rgba(255, 184, 107, 0.16); color: var(--accent); }
   .panel {
-    left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 46vh; border-radius: 18px 18px 0 0;
+    left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 42vh; border-radius: 18px 18px 0 0;
     border-bottom: 0;
   }
   .panel.closed { transform: translateY(calc(100% + 10px)); }
   .panel-toggle { top: auto; bottom: 14px; right: 12px; }
-  .dock { left: 8px; right: 8px; bottom: calc(46vh + 8px); }
+  .dock { left: 8px; right: 8px; bottom: calc(42vh + 8px); }
   .app.panel-closed .dock { right: 8px; bottom: 60px; }
-  .dock-inner { padding: 7px 10px; gap: 6px 12px; }
+  .dock-inner { padding: 7px 10px; gap: 6px 12px; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .dock-inner::-webkit-scrollbar { display: none; }
+  .dock-inner > * { flex: none; }
   input[type='range'] { width: 92px; }
-  .scalebar { left: 12px; bottom: calc(46vh + 12px); display: none; }
-  .tour { left: 8px; right: 8px; bottom: 8px; width: auto; z-index: 12; }
+  .scalebar { display: none; }
+  .tour { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; z-index: 12; }
   .scrim { padding-top: 8vh; }
 }
