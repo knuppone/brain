@@ -11,7 +11,8 @@ Five levels, each roughly a thousand times smaller than the last, joined by one 
 | **Synapse** | ~1 µm | Vesicle release, receptors, reuptake — and how drugs change them |
 | **Membrane** | ~10 nm | Ion channels and the action potential, driven by the Hodgkin–Huxley equations |
 
-Also included: a guided tour, search across every structure and concept (`/`), and a short quiz per level.
+Also included: a guided tour, search across every structure and concept (`/`), a short quiz per level,
+and light and dark themes (the top-bar button cycles dark, light and follow-system).
 
 ## Run it
 

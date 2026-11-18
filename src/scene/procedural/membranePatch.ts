@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MEM_COLORS } from '../../content/membrane';
+import { setGlowBlend } from '../theme3d';
 
 export type ProteinKind = 'na' | 'k' | 'leak' | 'pump';
 type ChannelState = 'closed' | 'open' | 'inactivated';
@@ -27,6 +28,25 @@ const KIND_ID: Record<ProteinKind, string> = { na: 'na-channel', k: 'k-channel',
 const KIND_COLOR: Record<ProteinKind, string> = {
   na: MEM_COLORS.naChannel, k: MEM_COLORS.kChannel, leak: MEM_COLORS.leak, pump: MEM_COLORS.pump,
 };
+/**
+ * Colours that differ between the dark and the light stage. The 3D scene, the banner dots and the
+ * charts all take the ion colours from here (membrane.css mirrors them as --mem-* variables), so
+ * an ion looks the same everywhere within a theme.
+ */
+export const MEM_THEME = {
+  dark: {
+    na: MEM_COLORS.na as string, k: MEM_COLORS.k as string, node: MEM_COLORS.node as string, myelin: MEM_COLORS.myelin as string,
+    threshold: MEM_COLORS.threshold as string, lipid: MEM_COLORS.lipid as string, volt: '#f4f6fb', plus: '#ff9db0', minus: '#9fb4ff',
+    atp: '#fff29a', atpGlow: '#ffe566',
+  },
+  light: {
+    na: '#e58a00', k: '#0b90d0', node: '#e87400', myelin: '#cdb888', threshold: '#d6334d', lipid: '#7d77a0', volt: '#161b2c',
+    plus: '#d92b4b', minus: '#3350d0', atp: '#f0b400', atpGlow: '#e09a00',
+  },
+};
+export type MemPalette = typeof MEM_THEME.dark;
+export const memPalette = (light: boolean): MemPalette => (light ? MEM_THEME.light : MEM_THEME.dark);
+
 const KIND_LABEL: Record<ProteinKind, string> = {
   na: 'Na⁺ channel', k: 'K⁺ channel', leak: 'K⁺ leak channel', pump: 'Na⁺/K⁺ pump',
 };
@@ -128,6 +148,7 @@ function makeTag(text: string, cls = 'tag', color?: string): CSS2DObject {
   el.className = cls;
   if (color) {
     const dot = document.createElement('i');
+    // colours given as var(--mem-…) follow the theme by themselves
     dot.style.background = color;
     el.appendChild(dot);
   }
@@ -183,6 +204,8 @@ export class MembranePatch {
   private time = 0;
   private channels: Protein[] = [];
   private labelsOn = true;
+  private light = false;
+  private pal: MemPalette = MEM_THEME.dark;
 
   constructor() {
     this.layout();
@@ -581,11 +604,11 @@ export class MembranePatch {
   private updateCharges(V: number) {
     const n = Math.round(this.chargeSlots * clamp01(Math.abs(V) / 75));
     const insideNeg = V < 0;
-    const plus = 0xff9db0, minus = 0x9fb4ff;
+    const plus = this.pal.plus, minus = this.pal.minus;
     const topM = this.chargeTop.material as THREE.PointsMaterial;
     const botM = this.chargeBottom.material as THREE.PointsMaterial;
-    topM.map = insideNeg ? this.texPlus : this.texMinus; topM.color.setHex(insideNeg ? plus : minus);
-    botM.map = insideNeg ? this.texMinus : this.texPlus; botM.color.setHex(insideNeg ? minus : plus);
+    topM.map = insideNeg ? this.texPlus : this.texMinus; topM.color.set(insideNeg ? plus : minus);
+    botM.map = insideNeg ? this.texMinus : this.texPlus; botM.color.set(insideNeg ? minus : plus);
     this.chargeTop.geometry.setDrawRange(0, n);
     this.chargeBottom.geometry.setDrawRange(0, n);
   }
@@ -617,12 +640,37 @@ export class MembranePatch {
       this.group.add(tag);
       this.tags.push(tag);
     };
-    region('OUTSIDE THE CELL · crowded with Na⁺', PATCH.x0 + 16, 14, PATCH.zBack, MEM_COLORS.na);
-    region('INSIDE THE CELL · crowded with K⁺', PATCH.x0 + 15, -13.5, PATCH.zFront, MEM_COLORS.k);
+    region('OUTSIDE THE CELL · crowded with Na⁺', PATCH.x0 + 16, 14, PATCH.zBack, 'var(--mem-na)');
+    region('INSIDE THE CELL · crowded with K⁺', PATCH.x0 + 15, -13.5, PATCH.zFront, 'var(--mem-k)');
     const bl = makeTag('lipid bilayer', 'tag small', MEM_COLORS.lipid);
     bl.position.set(PATCH.x0 + 2.6, 0, PATCH.zFront + 0.6);
     this.group.add(bl);
     this.tags.push(bl);
+  }
+
+  /** dark stage: glowing ions and additive pore light; light stage: solid saturated ions and translucent ink */
+  setTheme(light: boolean) {
+    this.light = light;
+    const pal = this.pal = memPalette(light);
+    [pal.na, pal.k].forEach((c, sp) => {
+      const m = this.ionMesh[sp].material as THREE.MeshStandardMaterial;
+      m.color.set(c); m.emissive.set(c);
+      m.emissiveIntensity = light ? 0.22 : 0.85;
+    });
+    const glow = this.glows.material as THREE.MeshBasicMaterial;
+    setGlowBlend(glow, light, ADDITIVE);
+    glow.opacity = light ? 0.42 : 1;
+    if (!light) {
+      this.proteins.forEach((p, i) => {
+        _m.compose(_p.set(p.x, 0, p.z), _q.identity(), _s.set(p.kind === 'leak' ? 0.6 : 1, 1, 1));
+        this.glows.setMatrixAt(i, _m);
+      });
+      this.glows.instanceMatrix.needsUpdate = true;
+    }
+    const atp = this.atp.material as THREE.MeshStandardMaterial;
+    atp.color.set(pal.atp); atp.emissive.set(pal.atpGlow);
+    (this.flaps.material as THREE.MeshStandardMaterial).emissiveIntensity = light ? 0.08 : 0.25;
+    (this.balls.material as THREE.MeshStandardMaterial).emissiveIntensity = light ? 0.15 : 0.35;
   }
 
   setLabels(on: boolean) {
@@ -790,10 +838,19 @@ export class MembranePatch {
         p.target.set(KIND_COLOR.pump);
         if (d.highlight === KIND_ID.pump) p.target.lerp(new THREE.Color(0xffffff), 0.16);
       }
-      const g = p.glow * (p.kind === 'leak' ? 0.32 : 0.5);
-      _c.set(p.kind === 'na' ? MEM_COLORS.na : MEM_COLORS.k).multiplyScalar(g);
-      this.glows.setColorAt(i, _c);
+      const ion = p.kind === 'na' ? this.pal.na : this.pal.k;
+      if (this.light) {
+        // ink on a pale stage: a translucent saturated column that swells as the pore opens
+        const w = Math.min(1, p.glow * 2.6) * (p.kind === 'leak' ? 0.6 : 1);
+        _m.compose(_p.set(p.x, 0, p.z), _q.identity(), _s.set(Math.max(w, 0.0001), 1, Math.max(w, 0.0001)));
+        this.glows.setMatrixAt(i, _m);
+        this.glows.setColorAt(i, _c.set(ion));
+      } else {
+        const g = p.glow * (p.kind === 'leak' ? 0.32 : 0.5);
+        this.glows.setColorAt(i, _c.set(ion).multiplyScalar(g));
+      }
     });
+    if (this.light) this.glows.instanceMatrix.needsUpdate = true;
 
     this.updatePump(d.simDt);
     this.stepIons(dt, running);
@@ -860,8 +917,10 @@ export class MembranePatch {
     this.atp.position.set(fx + 2.2 + (1 - dock) * 6 + leave * 6, fy - 1.2 - (1 - dock) * 3 - leave * 4, fz + 1.6);
     this.atp.rotation.set(ph * 20, ph * 14, 0);
     this.atp.scale.setScalar(visible ? 1 - leave * 0.45 : 0.001);
-    (this.atp.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.5 + flash * 2 - leave * 0.4;
-    (this.foot.material as THREE.MeshStandardMaterial).emissiveIntensity = flash * 0.7;
+    // emissive boosts bleach to white on the pale stage: keep them low there
+    const em = this.light ? 0.35 : 1;
+    (this.atp.material as THREE.MeshStandardMaterial).emissiveIntensity = (0.5 + flash * 2 - leave * 0.4) * em;
+    (this.foot.material as THREE.MeshStandardMaterial).emissiveIntensity = flash * 0.7 * em;
     const text = ph < 0.24 ? 'ATP' : 'ADP + Pᵢ';
     if (this.atpTag.element.textContent !== text) this.atpTag.element.textContent = text;
     this.atpTag.visible = this.labelsOn && visible;

@@ -7,7 +7,25 @@ import {
   type DrugInfo,
 } from '../../content/synapse';
 import { Bullets, Callout, Chip, DiveCTA, Divider, Header, Meter, Row, Section, Slider, Toggle } from '../kit';
+import * as THREE from 'three';
+import { useTheme } from '../../state/theme';
+import { token } from '../../scene/theme3d';
 import '../../styles/synapse.css';
+
+/** content colours are tuned for the dark theme; on the light one, swatches and bars use a deeper ink of the same hue */
+const _hsl = { h: 0, s: 0, l: 0 };
+const _col = new THREE.Color();
+function inkCss(c: string, light: boolean, maxL = 0.5) {
+  if (!light) return c;
+  _col.set(c).getHSL(_hsl, THREE.SRGBColorSpace);
+  // near-white content colours carry almost no hue: keep them muted instead of fully saturated
+  const s = Math.min(_hsl.s, _hsl.l > 0.8 ? 0.42 : 0.9);
+  return `#${_col.setHSL(_hsl.h, s, Math.min(_hsl.l, maxL), THREE.SRGBColorSpace).getHexString()}`;
+}
+function useInk() {
+  const light = useTheme((s) => s.theme) === 'light';
+  return (c: string, maxL?: number) => inkCss(c, light, maxL);
+}
 
 /** the stage of the sequence at which each drug interferes */
 const DRUG_STAGE: Record<DrugId, number> = {
@@ -21,8 +39,15 @@ const isModulator = (t: TransmitterId) => t === 'dopamine' || t === 'serotonin';
 /** live trace of the receiving neuron's membrane potential (and the slow internal signal for modulators) */
 function PotentialChart() {
   const ref = useRef<HTMLCanvasElement>(null);
+  const theme = useTheme((s) => s.theme);
   useEffect(() => {
     let raf = 0;
+    const light = theme === 'light';
+    // colours from the design tokens, read once per theme
+    const cDim = token('--dim'), cFaint = token('--faint'), cText = token('--text-strong'), fg = token('--fg-rgb', '255 255 255');
+    const cThresh = light ? token('--accent') : '#ffb86b';
+    const cThreshLine = light ? `rgb(${token('--accent-rgb')} / 0.8)` : 'rgba(255,184,107,0.75)';
+    const cMess = inkCss(COLORS.messenger, light, 0.55);
     const draw = () => {
       raf = requestAnimationFrame(draw);
       const cv = ref.current;
@@ -44,23 +69,23 @@ function PotentialChart() {
       // reference lines
       g.lineWidth = 1;
       for (const [v, label, color, dash] of [
-        [V_THRESHOLD, '−55', 'rgba(255,184,107,0.75)', [4, 3]], [V_REST, '−70', 'rgba(255,255,255,0.28)', []], [-85, '−85', 'rgba(255,255,255,0.1)', []],
+        [V_THRESHOLD, '−55', cThreshLine, [4, 3]], [V_REST, '−70', `rgb(${fg} / ${light ? 0.34 : 0.28})`, []], [-85, '−85', `rgb(${fg} / ${light ? 0.14 : 0.1})`, []],
       ] as [number, string, string, number[]][]) {
         g.strokeStyle = color; g.setLineDash(dash);
         g.beginPath(); g.moveTo(padL, y(v) + 0.5); g.lineTo(W - padR, y(v) + 0.5); g.stroke();
         g.setLineDash([]);
-        g.fillStyle = v === V_THRESHOLD ? '#ffb86b' : '#9ba6bd'; g.textAlign = 'right';
+        g.fillStyle = v === V_THRESHOLD ? cThresh : light ? cDim : '#9ba6bd'; g.textAlign = 'right';
         g.fillText(label, padL - 6, y(v));
       }
-      g.textAlign = 'right'; g.fillStyle = '#ffb86b';
+      g.textAlign = 'right'; g.fillStyle = cThresh;
       g.fillText('threshold — the neuron fires', W - padR - 2, y(V_THRESHOLD) - 8);
       g.textAlign = 'left';
-      g.fillStyle = '#6b7690';
+      g.fillStyle = light ? cFaint : '#6b7690';
       g.fillText('rest', padL + 4, y(V_REST) + 9);
       g.textAlign = 'right';
       g.fillText(`last ${Math.round(TRACE_N * TRACE_DT)} s of slow motion →`, W - padR, Hh - 6);
       g.save();
-      g.translate(9, padT + 12); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillStyle = '#6b7690';
+      g.translate(9, padT + 12); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillStyle = light ? cFaint : '#6b7690';
       g.fillText('mV', 0, 0);
       g.restore();
 
@@ -72,13 +97,13 @@ function PotentialChart() {
         g.moveTo(x(0), base);
         for (let i = 0; i < TRACE_N; i++) g.lineTo(x(i), base - sim.traceMessenger[(sim.traceHead + i) % TRACE_N] * (base - top));
         g.lineTo(x(TRACE_N - 1), base); g.closePath();
-        g.fillStyle = 'rgba(255,157,224,0.16)'; g.fill();
+        g.fillStyle = light ? 'rgba(214,40,160,0.13)' : 'rgba(255,157,224,0.16)'; g.fill();
         g.beginPath();
         for (let i = 0; i < TRACE_N; i++) {
           const yy = base - sim.traceMessenger[(sim.traceHead + i) % TRACE_N] * (base - top);
           if (i === 0) g.moveTo(x(i), yy); else g.lineTo(x(i), yy);
         }
-        g.strokeStyle = COLORS.messenger; g.lineWidth = 1.5; g.stroke();
+        g.strokeStyle = cMess; g.lineWidth = 1.5; g.stroke();
       }
 
       // membrane potential
@@ -90,21 +115,21 @@ function PotentialChart() {
         const yy = y(Math.max(vMin, v));
         if (i === 0) g.moveTo(x(i), yy); else g.lineTo(x(i), yy);
       }
-      g.strokeStyle = info.ion ? info.color : '#e9edf6';
+      g.strokeStyle = info.ion ? inkCss(info.color, light) : light ? cText : '#e9edf6';
       g.lineWidth = 2; g.lineJoin = 'round';
       g.stroke();
-      g.fillStyle = '#ffb86b'; g.textAlign = 'center';
+      g.fillStyle = cThresh; g.textAlign = 'center';
       for (const i of spikes) {
         g.beginPath(); g.arc(x(i), padT + 1, 3, 0, Math.PI * 2); g.fill();
       }
       // "now" dot
       const last = sim.trace[(sim.traceHead + TRACE_N - 1) % TRACE_N];
       g.beginPath(); g.arc(x(TRACE_N - 1) - 1, y(Math.min(vMax, Math.max(vMin, last))), 3.2, 0, Math.PI * 2);
-      g.fillStyle = '#fff'; g.fill();
+      g.fillStyle = light ? cText : '#fff'; g.fill();
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [theme]);
   return <canvas ref={ref} className="chart" style={{ height: 150 }} role="img"
     aria-label="Live chart of the receiving neuron's membrane potential in millivolts, with resting level at minus 70 and firing threshold at minus 55" />;
 }
@@ -114,28 +139,31 @@ function LiveBlock() {
   const transmitter = useSynapse((s) => s.transmitter);
   const info = transmitterById.get(transmitter)!;
   const mod = isModulator(transmitter);
+  const k = useInk();
+  const light = useTheme((s) => s.theme) === 'light';
   return (
     <>
-      <Meter label="In the cleft" value={live.cleft / 70} color={info.color} text={`${live.cleft}`} />
-      <Meter label={mod ? 'Receptors on' : 'Receptors open'} value={live.open} color={mod ? COLORS.messenger : info.ion === 'Cl⁻' ? COLORS.cl : COLORS.na} />
-      <Meter label="Vesicles ready" value={live.docked / 8} color="#dfe8ff" text={`${live.docked}/8`} />
-      {mod && <Meter label="Internal signal" value={live.messenger} color={COLORS.messenger} />}
+      <Meter label="In the cleft" value={live.cleft / 70} color={k(info.color)} text={`${live.cleft}`} />
+      <Meter label={mod ? 'Receptors on' : 'Receptors open'} value={live.open} color={k(mod ? COLORS.messenger : info.ion === 'Cl⁻' ? COLORS.cl : COLORS.na, 0.5)} />
+      <Meter label="Vesicles ready" value={live.docked / 8} color={light ? '#6f86c4' : '#dfe8ff'} text={`${live.docked}/8`} />
+      {mod && <Meter label="Internal signal" value={live.messenger} color={k(COLORS.messenger, 0.55)} />}
       <div className="syn-chart-head">
         <span><b>Voltage of the receiving neuron</b></span>
         <span className={`syn-fired ${live.sinceFired < 1.6 ? 'on' : ''}`}>IT FIRES!</span>
       </div>
       <PotentialChart />
       <div className="legend">
-        <span><i style={{ background: info.ion ? info.color : '#e9edf6' }} />{info.responseLabel}</span>
-        {mod && <span><i style={{ background: COLORS.messenger }} />internal signal (cAMP)</span>}
-        {info.ion && <span><i style={{ background: info.ion === 'Cl⁻' ? COLORS.cl : COLORS.na }} />{info.ion} ions</span>}
-        <span><i style={{ background: COLORS.ca }} />Ca²⁺</span>
+        <span><i style={{ background: info.ion ? k(info.color) : light ? 'var(--text-strong)' : '#e9edf6' }} />{info.responseLabel}</span>
+        {mod && <span><i style={{ background: k(COLORS.messenger, 0.55) }} />internal signal (cAMP)</span>}
+        {info.ion && <span><i style={{ background: k(info.ion === 'Cl⁻' ? COLORS.cl : COLORS.na) }} />{info.ion} ions</span>}
+        <span><i style={{ background: k(COLORS.ca) }} />Ca²⁺</span>
       </div>
     </>
   );
 }
 
 function Steps() {
+  const k = useInk();
   const stage = useSynapseLive((s) => s.stage);
   const held = useSynapseLive((s) => s.held);
   const stepMode = useSynapse((s) => s.stepMode);
@@ -155,7 +183,7 @@ function Steps() {
               <b>{s.title}</b>
               {(stepMode || stage === s.n) && <small>{s.text}</small>}
               {active.filter((d) => DRUG_STAGE[d.id] === s.n).map((d) => (
-                <span key={d.id} className="acts"><i style={{ background: d.color }} />{d.short} acts here</span>
+                <span key={d.id} className="acts"><i style={{ background: k(d.color) }} />{d.short} acts here</span>
               ))}
             </span>
           </li>
@@ -173,6 +201,7 @@ function Steps() {
 }
 
 function DrugToggle({ d }: { d: DrugInfo }) {
+  const k = useInk();
   const on = useSynapse((s) => s.drugs.includes(d.id));
   const toggleDrug = useSynapse((s) => s.toggleDrug);
   const select = useCore((s) => s.select);
@@ -180,7 +209,7 @@ function DrugToggle({ d }: { d: DrugInfo }) {
     <div className={`syn-drug ${on ? 'on' : ''}`}>
       <button className={`toggle ${on ? 'on' : ''}`} role="switch" aria-checked={on} onClick={() => toggleDrug(d.id)}>
         <span className="sw" />
-        <i style={{ background: d.color }} />
+        <i style={{ background: k(d.color) }} />
         {d.short}
       </button>
       <button className="more" onClick={() => select('synapse', d.id)} aria-label={`More about ${d.name}`}>How it works ›</button>
@@ -224,12 +253,13 @@ function Chemistry() {
 }
 
 function TransmitterChooser() {
+  const k = useInk();
   const transmitter = useSynapse((s) => s.transmitter);
   const set = useSynapse((s) => s.set);
   return (
     <div className="chips">
       {TRANSMITTERS.map((t) => (
-        <Chip key={t.id} label={t.name} color={t.color} on={t.id === transmitter} onClick={() => set({ transmitter: t.id })} />
+        <Chip key={t.id} label={t.name} color={k(t.color)} on={t.id === transmitter} onClick={() => set({ transmitter: t.id })} />
       ))}
     </div>
   );
@@ -237,6 +267,7 @@ function TransmitterChooser() {
 
 // -------------------------------------------------------------------- panel
 export function SynapsePanel() {
+  const k = useInk();
   const sel = useCore((s) => s.selection.synapse);
   const select = useCore((s) => s.select);
   const goTo = useCore((s) => s.goTo);
@@ -251,7 +282,7 @@ export function SynapsePanel() {
   if (t) {
     return (
       <>
-        <Header eyebrow={`Transmitter · ${t.role.toLowerCase()}`} color={t.color} title={t.name} lede={t.tagline} onBack={back} backLabel="The synapse" />
+        <Header eyebrow={`Transmitter · ${t.role.toLowerCase()}`} color={k(t.color)} title={t.name} lede={t.tagline} onBack={back} backLabel="The synapse" />
         <Section title="What it does at this synapse">
           <Bullets items={[`Binds ${t.receptors}. ${t.effect}`, ...t.bullets]} />
         </Section>
@@ -277,7 +308,7 @@ export function SynapsePanel() {
     const on = drugs.includes(d.id);
     return (
       <>
-        <Header eyebrow={d.target} color={d.color} title={d.name} lede={d.tagline} onBack={back} backLabel="The synapse" />
+        <Header eyebrow={d.target} color={k(d.color)} title={d.name} lede={d.tagline} onBack={back} backLabel="The synapse" />
         <div className="syn-inline">
           <Toggle label={on ? 'Active in the simulation' : 'Switched off'} on={on} onChange={(v) => toggleDrug(d.id, v)} />
         </div>
@@ -289,7 +320,7 @@ export function SynapsePanel() {
           <Section title="Acts on">
             <div className="chips">
               {d.transmitters.map((id) => transmitterById.get(id)!).map((x) => (
-                <Chip key={x.id} label={x.name} color={x.color} on={x.id === transmitter} onClick={() => select('synapse', x.id)} />
+                <Chip key={x.id} label={x.name} color={k(x.color)} on={x.id === transmitter} onClick={() => select('synapse', x.id)} />
               ))}
             </div>
           </Section>
@@ -303,7 +334,7 @@ export function SynapsePanel() {
   if (p) {
     return (
       <>
-        <Header eyebrow={p.eyebrow} color={p.color} title={p.name} lede={p.tagline} onBack={back} backLabel="The synapse" />
+        <Header eyebrow={p.eyebrow} color={k(p.color)} title={p.name} lede={p.tagline} onBack={back} backLabel="The synapse" />
         <Section title="What it does"><Bullets items={p.bullets} /></Section>
         {p.id === 'receptor' && (
           <Section title={`With ${info.name.toLowerCase()}`}><p className="syn-p">This synapse carries {info.receptors}. {info.effect}</p></Section>
@@ -320,7 +351,7 @@ export function SynapsePanel() {
         </Section>
         <Section title="Other parts">
           <div className="chips">
-            {PARTS.filter((x) => x.id !== p.id).map((x) => <Chip key={x.id} label={x.name} color={x.color} onClick={() => select('synapse', x.id)} />)}
+            {PARTS.filter((x) => x.id !== p.id).map((x) => <Chip key={x.id} label={x.name} color={k(x.color)} onClick={() => select('synapse', x.id)} />)}
           </div>
         </Section>
         {cta}
@@ -331,7 +362,7 @@ export function SynapsePanel() {
   if (sel === CAFFEINE.id) {
     return (
       <>
-        <Header eyebrow="An aside · blocks adenosine receptors" color={CAFFEINE.color} title={CAFFEINE.name} lede={CAFFEINE.tagline} onBack={back} backLabel="The synapse" />
+        <Header eyebrow="An aside · blocks adenosine receptors" color={k(CAFFEINE.color)} title={CAFFEINE.name} lede={CAFFEINE.tagline} onBack={back} backLabel="The synapse" />
         <Section title="How it works"><Bullets items={CAFFEINE.bullets} /></Section>
         <Section title="Remember this">
           <div className="syn-stack">
@@ -353,13 +384,13 @@ export function SynapsePanel() {
       <Section title="Choose the transmitter">
         <TransmitterChooser />
         <div className="list" style={{ marginTop: 8 }}>
-          <Row title={`${info.name} — ${info.role.toLowerCase()}`} sub={info.effect} color={info.color} onClick={() => select('synapse', info.id)} />
+          <Row title={`${info.name} — ${info.role.toLowerCase()}`} sub={info.effect} color={k(info.color)} onClick={() => select('synapse', info.id)} />
         </div>
       </Section>
       <Section title="Change the chemistry"><Chemistry /></Section>
       <Section title="Parts of the synapse">
         <div className="chips">
-          {PARTS.map((x) => <Chip key={x.id} label={x.name} color={x.color} onClick={() => select('synapse', x.id)} />)}
+          {PARTS.map((x) => <Chip key={x.id} label={x.name} color={k(x.color)} onClick={() => select('synapse', x.id)} />)}
         </div>
       </Section>
       <Section title="Remember this">
@@ -372,7 +403,7 @@ export function SynapsePanel() {
           </Callout>
         </div>
         <div className="list" style={{ marginTop: 8 }}>
-          <Row title="And caffeine?" sub={CAFFEINE.tagline} color={CAFFEINE.color} onClick={() => select('synapse', CAFFEINE.id)} />
+          <Row title="And caffeine?" sub={CAFFEINE.tagline} color={k(CAFFEINE.color)} onClick={() => select('synapse', CAFFEINE.id)} />
         </div>
       </Section>
       {cta}

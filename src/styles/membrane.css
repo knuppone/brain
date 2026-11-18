@@ -1,5 +1,31 @@
 /* Membrane level ("Action Potential Lab") — dock, banner, chart and 3D label styles */
 
+/* Level colours that change with the theme. The ion colours mirror MEM_THEME in membranePatch.ts
+   (3D scene and charts) — keep the two in step. */
+:root {
+  --mem-na: #ffb02e; --mem-k: #45d4ff; --mem-node: #ffd966; --mem-myelin: #e9dfc8; --mem-threshold: #ff7a8a; --mem-volt: #f4f6fb;
+  --mem-inact: #ff4d6d; --mem-inact-text: #ff8fa3; --mem-blocked: #5a5f6e; --mem-blocked-text: #b8bfd0;
+  --mem-ttx: #4fd67a; --mem-ttx-text: #7dff9b; --mem-tea: #ff8ad8; --mem-tea-text: #ff8ad8;
+  --mem-atp: #fff29a; --mem-atp-line: rgba(255, 242, 154, 0.4);
+  --mem-open-bg: #fff; --mem-open-fg: #10131c; --mem-dot-glow: 6px; --mem-dot-ring: transparent;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+  --mem-na: #e58a00; --mem-k: #0b90d0; --mem-node: #e87400; --mem-myelin: #cdb888; --mem-threshold: #d6334d; --mem-volt: #161b2c;
+  --mem-inact: #e0304f; --mem-inact-text: #c42f48; --mem-blocked: #9aa1b3; --mem-blocked-text: #56607a;
+  --mem-ttx: #2fae5c; --mem-ttx-text: #177a3e; --mem-tea: #d655ad; --mem-tea-text: #b0338a;
+  --mem-atp: #8a6200; --mem-atp-line: rgba(176, 124, 0, 0.45);
+  --mem-open-bg: #161b2c; --mem-open-fg: #fff; --mem-dot-glow: 0px; --mem-dot-ring: rgb(22 28 48 / 0.28);
+  }
+}
+:root[data-theme='light'] {
+  --mem-na: #e58a00; --mem-k: #0b90d0; --mem-node: #e87400; --mem-myelin: #cdb888; --mem-threshold: #d6334d; --mem-volt: #161b2c;
+  --mem-inact: #e0304f; --mem-inact-text: #c42f48; --mem-blocked: #9aa1b3; --mem-blocked-text: #56607a;
+  --mem-ttx: #2fae5c; --mem-ttx-text: #177a3e; --mem-tea: #d655ad; --mem-tea-text: #b0338a;
+  --mem-atp: #8a6200; --mem-atp-line: rgba(176, 124, 0, 0.45);
+  --mem-open-bg: #161b2c; --mem-open-fg: #fff; --mem-dot-glow: 0px; --mem-dot-ring: rgb(22 28 48 / 0.28);
+}
+
 .mem-dock { width: 860px; max-width: 100%; display: grid; gap: 8px; }
 .mem-chart { height: 204px; }
 .mem-chart.axon { height: 170px; }
@@ -9,8 +35,8 @@
 .mem-group { display: inline-flex; align-items: center; gap: 8px; }
 .btn.mem-stim { height: 34px; padding: 0 16px; font-size: 13.5px; }
 .btn.mem-stim svg { margin-right: 1px; }
-.toggle.mem-ttx.on .sw { background: #4fd67a; }
-.toggle.mem-tea.on .sw { background: #ff8ad8; }
+.toggle.mem-ttx.on .sw { background: var(--mem-ttx); }
+.toggle.mem-tea.on .sw { background: var(--mem-tea); }
 .mem-panel-chart { display: none; margin-top: 14px; }
 
 /* banner: big voltage read-out + what is happening now */
@@ -28,25 +54,25 @@
 .mem-volt .sub { display: block; font-size: 10.5px; font-weight: 600; color: var(--faint); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
 .mem-now { min-width: 0; border-left: 1px solid var(--line); padding-left: 16px; }
 .mem-now .ph { font-size: 16px; font-weight: 680; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.mem-now .ph i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.mem-now .ph i { width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px var(--mem-dot-ring); }
 .mem-now .why { color: var(--text-2); font-size: 13px; margin-top: 1px; text-wrap: pretty; }
 .mem-now .meta { color: var(--faint); font-size: 11.5px; margin-top: 3px; }
 .mem-pops { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 5px; font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .mem-pops .pop { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .mem-pops .dots { display: inline-flex; gap: 3px; }
 .mem-pops .dots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--faint); box-sizing: border-box; transition: background 0.1s; }
-.mem-pops .dots i.open.na { background: #ffb02e; border-color: #ffb02e; box-shadow: 0 0 6px #ffb02e; }
-.mem-pops .dots i.open.k { background: #45d4ff; border-color: #45d4ff; box-shadow: 0 0 6px #45d4ff; }
-.mem-pops .dots i.inact { background: #ff4d6d; border-color: #ff4d6d; }
-.mem-pops .dots i.blocked { background: #5a5f6e; border-color: #5a5f6e; }
+.mem-pops .dots i.open.na { background: var(--mem-na); border-color: var(--mem-na); box-shadow: 0 0 var(--mem-dot-glow) var(--mem-na); }
+.mem-pops .dots i.open.k { background: var(--mem-k); border-color: var(--mem-k); box-shadow: 0 0 var(--mem-dot-glow) var(--mem-k); }
+.mem-pops .dots i.inact { background: var(--mem-inact); border-color: var(--mem-inact); }
+.mem-pops .dots i.blocked { background: var(--mem-blocked); border-color: var(--mem-blocked); }
 .mem-badge {
   font-size: 11px; font-weight: 650; letter-spacing: 0.04em; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
   border: 1px solid var(--line-strong); color: var(--text);
 }
 .mem-badge.spike { background: rgb(var(--good-rgb) / 0.16); border-color: var(--good); color: var(--good); }
 .mem-badge.sub, .mem-badge.refractory, .mem-badge.blocked { background: rgb(var(--warn-rgb) / 0.12); border-color: var(--warn); color: var(--warn); }
-.mem-badge.ttx { border-color: #4fd67a; color: #7dff9b; }
-.mem-badge.tea { border-color: #ff8ad8; color: #ff8ad8; }
+.mem-badge.ttx { border-color: var(--mem-ttx); color: var(--mem-ttx-text); }
+.mem-badge.tea { border-color: var(--mem-tea); color: var(--mem-tea-text); }
 .mem-badge.fade { animation: mem-fade 3.2s ease forwards; }
 @keyframes mem-fade { 0% { opacity: 0; transform: scale(0.9); } 8% { opacity: 1; transform: scale(1.06); } 14% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
 .mem-speeds { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; font-size: 12.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
@@ -75,11 +101,11 @@
 .label-layer { isolation: isolate; }
 .tag.mem-name { font-weight: 600; }
 .tag.mem-region { background: rgb(var(--shade-rgb) / 0.5); border: 0; backdrop-filter: none; color: var(--dim); font-size: 10.5px; letter-spacing: 0.1em; font-weight: 650; }
-.tag.mem-atp { color: #fff29a; border-color: rgba(255, 242, 154, 0.4); }
+.tag.mem-atp { color: var(--mem-atp); border-color: var(--mem-atp-line); }
 .tag.mem-state { font-size: 10px; padding: 0 6px; letter-spacing: 0.03em; color: var(--faint); border-color: transparent; background: rgb(var(--shade-rgb) / 0.55); }
-.tag.mem-state[data-state='open'] { color: #10131c; background: #fff; border-color: #fff; font-weight: 700; }
-.tag.mem-state[data-state='inactivated'] { color: #ff8fa3; border-color: rgba(255, 77, 109, 0.45); }
-.tag.mem-state[data-state='blocked'] { color: #b8bfd0; border-color: var(--line-strong); text-decoration: line-through; }
+.tag.mem-state[data-state='open'] { color: var(--mem-open-fg); background: var(--mem-open-bg); border-color: var(--mem-open-bg); font-weight: 700; }
+.tag.mem-state[data-state='inactivated'] { color: var(--mem-inact-text); border-color: rgba(255, 77, 109, 0.45); }
+.tag.mem-state[data-state='blocked'] { color: var(--mem-blocked-text); border-color: var(--line-strong); text-decoration: line-through; }
 
 @media (max-width: 860px) {
   .mem-dock { gap: 0; }

@@ -8,12 +8,13 @@
 import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { MEM_COLORS } from '../../content/membrane';
-import { ADDITIVE } from './membranePatch';
+import { ADDITIVE, MEM_THEME, memPalette, type MemPalette } from './membranePatch';
+import { setGlowBlend } from '../theme3d';
 import { AXON_SAMPLES } from '../../state/membraneState';
 
 export const AXON = { length: 60, radius: 1.75, mmPerUnit: 0.5, internodes: 30, myelinR: 2.75, gap: 0.56 };
 
-const STOPS: [number, number, number, number][] = [
+const STOPS_DARK: [number, number, number, number][] = [
   [-82, 0.07, 0.11, 0.42],
   [-65, 0.2, 0.25, 0.44],
   [-52, 0.62, 0.3, 0.3],
@@ -22,7 +23,18 @@ const STOPS: [number, number, number, number][] = [
   [45, 1.0, 0.97, 0.72],
 ];
 
-export function voltageColor(V: number, out: THREE.Color): THREE.Color {
+/** the same ramp for a pale stage (whose brighter lights would bleach the dark ramp): deeper at rest, peaking at a saturated orange instead of near-white */
+const STOPS_LIGHT: [number, number, number, number][] = [
+  [-82, 0.02, 0.03, 0.17],
+  [-65, 0.045, 0.06, 0.24],
+  [-52, 0.26, 0.04, 0.17],
+  [-20, 0.5, 0.06, 0.035],
+  [15, 0.62, 0.17, 0.0],
+  [45, 0.72, 0.27, 0.0],
+];
+
+export function voltageColor(V: number, out: THREE.Color, light = false): THREE.Color {
+  const STOPS = light ? STOPS_LIGHT : STOPS_DARK;
   if (V <= STOPS[0][0]) return out.setRGB(STOPS[0][1], STOPS[0][2], STOPS[0][3]);
   for (let i = 1; i < STOPS.length; i++) {
     if (V <= STOPS[i][0]) {
@@ -67,6 +79,7 @@ const _q = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _s = new THREE.Vector3();
 const _c = new THREE.Color();
+const _c2 = new THREE.Color();
 
 export interface AxonDrive {
   /** evenly resampled membrane potential along the axon */
@@ -101,6 +114,10 @@ export class AxonModel {
   private ringQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
   private flash = new Float32Array(AXON.internodes + 1);
   private nodePrev = new Float32Array(AXON.internodes + 1).fill(-65);
+  private light = false;
+  private pal: MemPalette = MEM_THEME.dark;
+  private uGlow = { value: 1.25 };
+  private capMat: THREE.MeshStandardMaterial;
 
   constructor() {
     const L = AXON.length;
@@ -115,15 +132,16 @@ export class AxonModel {
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(pos.count * 3), 3));
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.05 });
     mat.onBeforeCompile = (sh) => {
-      sh.fragmentShader = sh.fragmentShader.replace(
+      sh.uniforms.uGlow = this.uGlow;
+      sh.fragmentShader = 'uniform float uGlow;\n' + sh.fragmentShader.replace(
         '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\n totalEmissiveRadiance += vColor.rgb * smoothstep(0.3, 0.95, vColor.r) * 1.25;',
+        '#include <emissivemap_fragment>\n totalEmissiveRadiance += vColor.rgb * smoothstep(0.3, 0.95, vColor.r) * uGlow;',
       );
     };
     this.tube = new THREE.Mesh(geo, mat);
     this.group.add(this.tube);
     // rounded ends
-    const capMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.2, 0.25, 0.44), roughness: 0.45 });
+    const capMat = this.capMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.2, 0.25, 0.44), roughness: 0.45 });
     for (const sgn of [-1, 1]) {
       const cap = new THREE.Mesh(new THREE.SphereGeometry(AXON.radius, 20, 12), capMat);
       cap.position.x = (sgn * L) / 2;
@@ -211,11 +229,11 @@ export class AxonModel {
     // --- labels
     this.tagBare = makeTag('bare axon: channels all along it', 'tag mem-name', MEM_COLORS.axon);
     this.tagBare.position.set(-6, 4.2, 0);
-    this.tagMyelin = makeTag('myelin sheath', 'tag mem-name', MEM_COLORS.myelin);
+    this.tagMyelin = makeTag('myelin sheath', 'tag mem-name', 'var(--mem-myelin)');
     this.tagMyelin.position.set(-L / 2 + inter * 6.5, 5.0, 0);
-    this.tagNode = makeTag('node of Ranvier', 'tag mem-name', MEM_COLORS.node);
+    this.tagNode = makeTag('node of Ranvier', 'tag mem-name', 'var(--mem-node)');
     this.tagNode.position.set(-L / 2 + inter * 10, -3.9, 0);
-    this.tagDamage = makeTag('damaged myelin', 'tag mem-name', MEM_COLORS.threshold);
+    this.tagDamage = makeTag('damaged myelin', 'tag mem-name', 'var(--mem-threshold)');
     this.tagDamage.position.set(0, 5.4, 0);
     const end = makeTag('to the synapses →', 'tag small');
     end.position.set(L / 2 - 2, 4.4, 0);
@@ -229,6 +247,19 @@ export class AxonModel {
     this.proxyMyelin = new THREE.Mesh(new THREE.CylinderGeometry(AXON.myelinR, AXON.myelinR, L, 12), hidden);
     this.proxyMyelin.rotation.z = Math.PI / 2;
     this.group.add(this.proxyAxon, this.proxyMyelin);
+  }
+
+  /** dark stage: glowing spike, additive node flashes and halo; light stage: saturated ramp, solid rings, ink halo */
+  setTheme(light: boolean) {
+    this.light = light;
+    this.pal = memPalette(light);
+    this.uGlow.value = light ? 0 : 1.25;
+    voltageColor(-65, this.capMat.color, light);
+    setGlowBlend(this.rings.material as THREE.Material, light, ADDITIVE);
+    for (const sp of this.halos) {
+      setGlowBlend(sp.material, light, ADDITIVE);
+      sp.material.color.set(light ? 0xff7a00 : 0xffc66b);
+    }
   }
 
   hideDom() {
@@ -271,7 +302,7 @@ export class AxonModel {
     const arr = col.array as Float32Array;
     const ramp = new Float32Array(AXON_SAMPLES * 3);
     for (let i = 0; i < AXON_SAMPLES; i++) {
-      voltageColor(d.V[i], _c);
+      voltageColor(d.V[i], _c, this.light);
       ramp[i * 3] = _c.r; ramp[i * 3 + 1] = _c.g; ramp[i * 3 + 2] = _c.b;
     }
     for (let v = 0; v < this.tubeSample.length; v++) {
@@ -282,8 +313,8 @@ export class AxonModel {
 
     // myelin sleeves grow / shrink; damaged ones are thin or gone
     const k = 1 - Math.exp(-7 * dt);
-    const cream = new THREE.Color(MEM_COLORS.myelin);
-    const sick = new THREE.Color(0xa98f78);
+    const cream = new THREE.Color(this.pal.myelin);
+    const sick = new THREE.Color(this.light ? 0x9c7f66 : 0xa98f78);
     for (let i = 0; i < n; i++) {
       const dmg = d.damage !== 'none' && i >= d.damaged[0] && i < d.damaged[1];
       const target = !d.myelin ? 0 : dmg ? (d.damage === 'mild' ? 0.4 : 0) : 1;
@@ -293,7 +324,7 @@ export class AxonModel {
       const rs = s < 0.02 ? 0.0001 : 0.62 + 0.38 * s;
       this.sheaths.setMatrixAt(i, _m.compose(_p.set(-L / 2 + (i + 0.5) * inter, 0, 0), _q.identity(), _s.set(s < 0.02 ? 0.0001 : 1, rs, rs)));
       _c.copy(dmg ? sick : cream);
-      if (d.highlight === 'myelin') _c.lerp(new THREE.Color(0xffffff), 0.25);
+      if (d.highlight === 'myelin') _c.lerp(new THREE.Color(this.light ? 0xf2c66a : 0xffffff), 0.25);
       this.sheaths.setColorAt(i, _c);
     }
     this.sheaths.instanceMatrix.needsUpdate = true;
@@ -308,8 +339,14 @@ export class AxonModel {
       else this.flash[i] *= fade;
       this.nodePrev[i] = v;
       const on = d.myelin ? 0.1 + this.flash[i] * 1.5 + THREE.MathUtils.smoothstep(v, -50, 20) * 0.25 + (d.highlight === 'node' ? 0.25 : 0) : 0;
-      this.rings.setColorAt(i, _c.set(MEM_COLORS.node).multiplyScalar(on));
-      const sc = 1 + this.flash[i] * 0.55;
+      if (this.light) {
+        // no additive light on a pale stage: a solid band that turns vivid and swells when the node fires
+        const hot = Math.min(1, this.flash[i] * 1.3 + THREE.MathUtils.smoothstep(v, -50, 20) * 0.35 + (d.highlight === 'node' ? 0.3 : 0));
+        this.rings.setColorAt(i, _c.set(0x9a7b3c).lerp(_c2.set(this.pal.node), hot));
+      } else {
+        this.rings.setColorAt(i, _c.set(MEM_COLORS.node).multiplyScalar(on));
+      }
+      const sc = 1 + this.flash[i] * (this.light ? 0.8 : 0.55);
       this.rings.setMatrixAt(i, _m.compose(_p.set(-L / 2 + i * inter, 0, 0), this.ringQ, _s.set(sc, sc, 1)));
     }
     this.rings.instanceMatrix.needsUpdate = true;
@@ -323,7 +360,7 @@ export class AxonModel {
       if (v > -25 && v >= d.V[i - 1] && v > d.V[i + 1]) {
         const sp = this.halos[h++];
         sp.position.set(-L / 2 + (i / (AXON_SAMPLES - 1)) * L, 0, 0);
-        (sp.material as THREE.SpriteMaterial).opacity = d.myelin ? 0 : THREE.MathUtils.smoothstep(v, -25, 25) * 0.7;
+        (sp.material as THREE.SpriteMaterial).opacity = d.myelin ? 0 : THREE.MathUtils.smoothstep(v, -25, 25) * (this.light ? 0.4 : 0.7);
         sp.scale.setScalar(11);
         // skip the rest of this hump
         while (i < AXON_SAMPLES - 1 && d.V[i] > -25) i++;

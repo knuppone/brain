@@ -4,6 +4,9 @@ import { useCore } from '../../state/store';
 import { PHASE_ORDER, membraneLive, useMembrane, type Damage, type PhaseId, type StimFeedback } from '../../state/membraneState';
 import { BLOCKERS, HONESTY_NOTE, KEY_IDEAS, MEMBRANE_ITEMS, MEM_COLORS, PHASES, SIX_BEATS, itemById } from '../../content/membrane';
 import { Bullets, Callout, Divider, Header, Row, Section, Segmented, Slider, Toggle } from '../kit';
+import { useTheme } from '../../state/theme';
+import { ink, token } from '../../scene/theme3d';
+import { memPalette } from '../../scene/procedural/membranePatch';
 import '../../styles/membrane.css';
 
 const fmtV = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(0)}`;
@@ -19,8 +22,37 @@ function hexA(hex: string, a: number) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
+/** chart colours for the current theme: neutrals from the design tokens, data colours from the shared membrane palette */
+function buildChartColors(light: boolean) {
+  const pal = memPalette(light);
+  const fg = token('--fg-rgb', '255 255 255');
+  const line = (a: number) => `rgb(${fg} / ${light ? Math.min(1, a * 1.7) : a})`;
+  // phase colours are pale glows in the dark theme; on a pale chart they become ink of the same hue
+  const phase = {} as Record<PhaseId, string>;
+  for (const id of PHASE_ORDER) {
+    const c = PHASES[id].color;
+    phase[id] = !light ? c : c === MEM_COLORS.na ? pal.na : c === MEM_COLORS.k ? pal.k : `#${ink(c, id === 'stimulus' ? 0.5 : 0.42).getHexString()}`;
+  }
+  return {
+    light, pal, phase,
+    grid: line(0.06), gridH: line(0.05), frame: line(0.12),
+    axis: token('--dim', '#9ba6bd'), faint: token('--faint', '#6b7690'),
+    rest: light ? `rgb(${fg} / 0.55)` : 'rgba(200,206,222,0.6)',
+    restDim: light ? `rgb(${fg} / 0.45)` : 'rgba(200,206,222,0.45)',
+    stim: token('--accent', '#ffb86b'),
+    node: light ? '#b97a00' : (MEM_COLORS.node as string),
+  };
+}
+let chartColors: ReturnType<typeof buildChartColors> | null = null;
+function colors() {
+  const light = useTheme.getState().theme === 'light';
+  if (!chartColors || chartColors.light !== light) chartColors = buildChartColors(light);
+  return chartColors;
+}
+
 function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed: number) {
   const L = membraneLive;
+  const C = colors();
   const padL = 40, padR = 62, padT = 16, padB = 17;
   const x0 = padL, x1 = W - padR;
   const gap = 8;
@@ -61,10 +93,10 @@ function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed:
         const id = PHASE_ORDER[prev] as PhaseId;
         const xa = Math.max(x0, tx(L.t[idx(segStart)])), xb = k < n ? tx(L.t[idx(k)]) : x1;
         if (id !== 'rest') {
-          g.fillStyle = hexA(PHASES[id].color, id === 'stimulus' ? 0.07 : 0.15);
+          g.fillStyle = hexA(C.phase[id], id === 'stimulus' ? 0.07 : C.light ? 0.13 : 0.15);
           g.fillRect(xa, vTop, xb - xa, gBot - vTop);
           if (xb - xa > 30 && id !== 'stimulus') {
-            g.fillStyle = hexA(PHASES[id].color, 0.95);
+            g.fillStyle = hexA(C.phase[id], 0.95);
             g.textAlign = 'center';
             g.fillText(PHASES[id].short, (xa + xb) / 2, vTop - 7);
           }
@@ -80,9 +112,9 @@ function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed:
   const every = Math.max(1, Math.ceil(64 / (((x1 - x0) * tick) / win)));
   for (let t = Math.ceil((now - win) / tick) * tick; t <= now; t += tick) {
     const x = tx(t);
-    g.strokeStyle = 'rgba(255,255,255,0.06)';
+    g.strokeStyle = C.grid;
     g.beginPath(); g.moveTo(x, vTop); g.lineTo(x, gBot); g.stroke();
-    if (Math.round(t / tick) % every === 0) { g.fillStyle = '#6b7690'; g.fillText(`${t.toFixed(0)} ms`, x, H - 7); }
+    if (Math.round(t / tick) % every === 0) { g.fillStyle = C.faint; g.fillText(`${t.toFixed(0)} ms`, x, H - 7); }
   }
   g.restore();
 
@@ -94,26 +126,27 @@ function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed:
     g.fillStyle = color; g.textAlign = 'left';
     g.fillText(label, x1 + 6, vy(v) + dy);
   };
-  ref(50, hexA(MEM_COLORS.na, 0.75), 'E_Na +50', [5, 4], 0);
-  ref(-55, hexA(MEM_COLORS.threshold, 0.85), 'threshold', [3, 3], -10);
-  ref(-65, 'rgba(200,206,222,0.6)', 'rest', [1, 3], 1);
-  ref(-77, hexA(MEM_COLORS.k, 0.75), 'E_K −77', [5, 4], 11);
+  const refA = C.light ? 1 : 0.75;
+  ref(50, hexA(C.pal.na, refA), 'E_Na +50', [5, 4], 0);
+  ref(-55, hexA(C.pal.threshold, C.light ? 1 : 0.85), 'threshold', [3, 3], -10);
+  ref(-65, C.rest, 'rest', [1, 3], 1);
+  ref(-77, hexA(C.pal.k, refA), 'E_K −77', [5, 4], 11);
 
   // y axis
-  g.textAlign = 'right'; g.fillStyle = '#9ba6bd';
+  g.textAlign = 'right'; g.fillStyle = C.axis;
   for (const v of [-80, -40, 0, 40]) {
     g.fillText(`${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}`, x0 - 6, vy(v));
-    g.strokeStyle = 'rgba(255,255,255,0.05)';
+    g.strokeStyle = C.gridH;
     g.beginPath(); g.moveTo(x0, vy(v)); g.lineTo(x1, vy(v)); g.stroke();
   }
   g.save();
-  g.translate(9, (vTop + vBot) / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillStyle = '#6b7690';
+  g.translate(9, (vTop + vBot) / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.fillStyle = C.faint;
   g.fillText('membrane mV', 0, 0);
   g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.12)';
+  g.strokeStyle = C.frame;
   g.strokeRect(x0 + 0.5, vTop + 0.5, x1 - x0, vBot - vTop);
   g.strokeRect(x0 + 0.5, gTop + 0.5, x1 - x0, gBot - gTop);
-  g.fillStyle = '#6b7690'; g.textAlign = 'right';
+  g.fillStyle = C.faint; g.textAlign = 'right';
   g.fillText('open', x0 - 6, (gTop + gBot) / 2);
 
   if (n - start < 2) return;
@@ -121,11 +154,12 @@ function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed:
   g.beginPath(); g.rect(x0, 0, x1 - x0 + 1, H); g.clip();
 
   // stimulus marks
-  g.fillStyle = hexA('#ffb86b', 0.9);
+  g.globalAlpha = 0.9; g.fillStyle = C.stim;
   for (let k = start; k < n; k++) {
     const s = L.stim[idx(k)];
     if (s > 0) g.fillRect(tx(L.t[idx(k)]) - 0.5, vBot - 2 - Math.min(12, s * 0.5), 1.6, Math.min(12, s * 0.5) + 2);
   }
+  g.globalAlpha = 1;
 
   // open-channel fractions
   const area = (arr: Float32Array, color: string) => {
@@ -139,21 +173,22 @@ function drawTimeChart(g: CanvasRenderingContext2D, W: number, H: number, speed:
     for (let k = start; k < n; k++) { const x = tx(L.t[idx(k)]), y = gy(arr[idx(k)]); if (k === start) g.moveTo(x, y); else g.lineTo(x, y); }
     g.strokeStyle = color; g.lineWidth = 1.6; g.stroke();
   };
-  area(L.kOpen, MEM_COLORS.k);
-  area(L.naOpen, MEM_COLORS.na);
+  area(L.kOpen, C.pal.k);
+  area(L.naOpen, C.pal.na);
 
   // the voltage trace
   g.beginPath();
   for (let k = start; k < n; k++) { const x = tx(L.t[idx(k)]), y = vy(L.V[idx(k)]); if (k === start) g.moveTo(x, y); else g.lineTo(x, y); }
-  g.strokeStyle = '#f4f6fb'; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke();
+  g.strokeStyle = C.pal.volt; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke();
   g.restore();
   const hy = vy(L.now.V);
-  g.fillStyle = 'rgba(255,255,255,0.25)'; g.beginPath(); g.arc(x1, hy, 7, 0, 7); g.fill();
-  g.fillStyle = '#fff'; g.beginPath(); g.arc(x1, hy, 3.2, 0, 7); g.fill();
+  g.fillStyle = C.light ? hexA(C.pal.volt, 0.18) : 'rgba(255,255,255,0.25)'; g.beginPath(); g.arc(x1, hy, 7, 0, 7); g.fill();
+  g.fillStyle = C.light ? C.pal.volt : '#fff'; g.beginPath(); g.arc(x1, hy, 3.2, 0, 7); g.fill();
 }
 
 function drawSpaceChart(g: CanvasRenderingContext2D, W: number, H: number) {
   const A = membraneLive.axon;
+  const C = colors();
   const padL = 40, padR = 62, padT = 16, padB = 20;
   const x0 = padL, x1 = W - padR, y0 = padT, y1 = H - padB;
   const px = (mm: number) => x0 + (mm / A.lengthMm) * (x1 - x0);
@@ -163,15 +198,15 @@ function drawSpaceChart(g: CanvasRenderingContext2D, W: number, H: number) {
   g.textBaseline = 'middle';
 
   if (A.damaged) {
-    g.fillStyle = hexA(MEM_COLORS.threshold, 0.14);
+    g.fillStyle = hexA(C.pal.threshold, 0.14);
     g.fillRect(px(A.damaged[0]), y0, px(A.damaged[1]) - px(A.damaged[0]), y1 - y0);
-    g.fillStyle = MEM_COLORS.threshold; g.textAlign = 'center';
+    g.fillStyle = C.pal.threshold; g.textAlign = 'center';
     g.fillText('damaged', (px(A.damaged[0]) + px(A.damaged[1])) / 2, y0 - 7);
   }
   // nodes of Ranvier
-  g.strokeStyle = hexA(MEM_COLORS.node, 0.1);
+  g.strokeStyle = hexA(C.node, C.light ? 0.22 : 0.1);
   for (const nx of A.nodes) { g.beginPath(); g.moveTo(px(nx), y0); g.lineTo(px(nx), y1); g.stroke(); }
-  g.fillStyle = hexA(MEM_COLORS.node, 0.9);
+  g.fillStyle = hexA(C.node, 0.9);
   for (const nx of A.nodes) g.fillRect(px(nx) - 1, y1 - 5, 2, 5);
 
   const ref = (v: number, color: string, label: string, dash: number[]) => {
@@ -180,29 +215,29 @@ function drawSpaceChart(g: CanvasRenderingContext2D, W: number, H: number) {
     g.setLineDash([]);
     g.fillStyle = color; g.textAlign = 'left'; g.fillText(label, x1 + 5, vy(v));
   };
-  ref(-55, hexA(MEM_COLORS.threshold, 0.8), 'threshold', [3, 3]);
-  ref(-65, 'rgba(200,206,222,0.45)', 'rest', [1, 3]);
-  g.textAlign = 'right'; g.fillStyle = '#9ba6bd';
+  ref(-55, hexA(C.pal.threshold, C.light ? 1 : 0.8), 'threshold', [3, 3]);
+  ref(-65, C.restDim, 'rest', [1, 3]);
+  g.textAlign = 'right'; g.fillStyle = C.axis;
   for (const v of [-80, -40, 0, 40]) g.fillText(`${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}`, x0 - 6, vy(v));
-  g.textAlign = 'center'; g.fillStyle = '#6b7690';
+  g.textAlign = 'center'; g.fillStyle = C.faint;
   for (let mm = 0; mm <= A.lengthMm; mm += 5) g.fillText(`${mm} mm`, px(mm), H - 8);
   g.save();
   g.translate(9, (y0 + y1) / 2); g.rotate(-Math.PI / 2); g.fillText('membrane mV', 0, 0);
   g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.12)';
+  g.strokeStyle = C.frame;
   g.strokeRect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0);
 
   // stimulus marker
-  g.fillStyle = '#ffb86b';
+  g.fillStyle = C.stim;
   const sx = px(A.stimX);
   g.beginPath(); g.moveTo(sx - 5, y1 + 1); g.lineTo(sx + 5, y1 + 1); g.lineTo(sx, y1 - 8); g.closePath(); g.fill();
 
   // voltage along the axon, filled so the wave reads as a shape
   const n = A.V.length;
   const grad = g.createLinearGradient(0, y0, 0, y1);
-  grad.addColorStop(0, hexA(MEM_COLORS.na, 0.5));
-  grad.addColorStop(0.75, hexA(MEM_COLORS.na, 0.04));
-  grad.addColorStop(1, hexA(MEM_COLORS.k, 0.1));
+  grad.addColorStop(0, hexA(C.pal.na, C.light ? 0.6 : 0.5));
+  grad.addColorStop(0.75, hexA(C.pal.na, C.light ? 0.08 : 0.04));
+  grad.addColorStop(1, hexA(C.pal.k, 0.1));
   g.beginPath();
   g.moveTo(x0, vy(-65));
   for (let i = 0; i < n; i++) g.lineTo(px((i / (n - 1)) * A.lengthMm), vy(A.V[i]));
@@ -211,8 +246,8 @@ function drawSpaceChart(g: CanvasRenderingContext2D, W: number, H: number) {
   g.fillStyle = grad; g.fill();
   g.beginPath();
   for (let i = 0; i < n; i++) { const x = px((i / (n - 1)) * A.lengthMm), y = vy(A.V[i]); if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); }
-  g.strokeStyle = '#f4f6fb'; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke();
-  g.fillStyle = '#9ba6bd'; g.textAlign = 'left';
+  g.strokeStyle = C.pal.volt; g.lineWidth = 2.2; g.lineJoin = 'round'; g.stroke();
+  g.fillStyle = C.axis; g.textAlign = 'left';
   g.fillText(`voltage along the axon · t = ${A.t.toFixed(1)} ms`, x0 + 8, y0 + 10);
 }
 
@@ -249,9 +284,9 @@ function ChartLegend() {
   if (view === 'axon') return null;
   return (
     <div className="legend">
-      <span><i style={{ background: '#f4f6fb' }} />voltage</span>
-      <span><i style={{ background: MEM_COLORS.na }} />Na⁺ channels open</span>
-      <span><i style={{ background: MEM_COLORS.k }} />K⁺ channels open</span>
+      <span><i style={{ background: 'var(--mem-volt)' }} />voltage</span>
+      <span><i style={{ background: 'var(--mem-na)' }} />Na⁺ channels open</span>
+      <span><i style={{ background: 'var(--mem-k)' }} />K⁺ channels open</span>
     </div>
   );
 }
@@ -359,7 +394,7 @@ function AxonBanner() {
   else if (myelin && damage !== 'none') status = 'It got through — but late. Timing errors like this scramble signals in multiple sclerosis.';
   else status = myelin ? 'Arrived. Only the nodes had to fire, so it was fast.' : 'Arrived. Every patch along the way had to fire — slow.';
   const ratio = ax.speedBare && ax.speedMyelin ? ax.speedMyelin / ax.speedBare : null;
-  const color = !myelin ? MEM_COLORS.axon : damage !== 'none' ? MEM_COLORS.threshold : MEM_COLORS.myelin;
+  const color = !myelin ? MEM_COLORS.axon : damage !== 'none' ? 'var(--mem-threshold)' : 'var(--mem-myelin)';
   return (
     <>
       <div className="mem-volt">

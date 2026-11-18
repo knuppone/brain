@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GEO, type TransmitterId } from '../../sim/synapse';
+import { ink } from '../theme3d';
 
 const { H } = GEO;
 
@@ -59,7 +60,7 @@ export function halfShell(profile: THREE.Vector2[], bend?: (y: number) => number
  */
 export function cutRibbon(profile: THREE.Vector2[], colors: [THREE.ColorRepresentation, THREE.ColorRepresentation, THREE.ColorRepresentation],
   thickness = 0.13, bend?: (y: number) => number, z = 0.004): THREE.Mesh {
-  const pos: number[] = [], col: number[] = [], idx: number[] = [];
+  const pos: number[] = [], col: number[] = [], idx: number[] = [], band: number[] = [];
   const bands = [-1, -0.36, 0.36, 1].map((k) => (k * thickness) / 2);
   const cols = colors.map((c) => new THREE.Color(c));
   const n = profile.length;
@@ -73,8 +74,9 @@ export function cutRibbon(profile: THREE.Vector2[], colors: [THREE.ColorRepresen
         const r = profile[i].x + nx * bands[k], y = profile[i].y + ny * bands[k];
         for (let dup = 0; dup < (k === 1 || k === 2 ? 2 : 1); dup++) {
           pos.push(side * r + (bend ? bend(profile[i].y) : 0), y, z);
-          const c = cols[k === 0 ? 0 : k === 3 ? 2 : k === 1 ? (dup === 0 ? 0 : 1) : dup === 0 ? 1 : 2];
-          col.push(c.r, c.g, c.b);
+          const ci = k === 0 ? 0 : k === 3 ? 2 : k === 1 ? (dup === 0 ? 0 : 1) : dup === 0 ? 1 : 2;
+          band.push(ci);
+          col.push(cols[ci].r, cols[ci].g, cols[ci].b);
         }
       }
     }
@@ -88,7 +90,18 @@ export function cutRibbon(profile: THREE.Vector2[], colors: [THREE.ColorRepresen
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
-  return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false }));
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false }));
+  mesh.userData.band = band;
+  return mesh;
+}
+
+/** repaint the three bands of a cut ribbon (used to swap between the dark- and light-stage palettes) */
+export function recolorRibbon(mesh: THREE.Mesh, colors: [THREE.ColorRepresentation, THREE.ColorRepresentation, THREE.ColorRepresentation]) {
+  const band = mesh.userData.band as number[];
+  const attr = mesh.geometry.attributes.color as THREE.BufferAttribute;
+  const cols = colors.map((c) => new THREE.Color(c));
+  for (let i = 0; i < band.length; i++) attr.setXYZ(i, cols[band[i]].r, cols[band[i]].g, cols[band[i]].b);
+  attr.needsUpdate = true;
 }
 
 let grain: THREE.Texture | null = null;
@@ -116,7 +129,32 @@ function grainTexture() {
 }
 
 export interface MembraneMaterial extends THREE.MeshStandardMaterial {
-  userData: { waves: { value: number[] }; waveColor: { value: THREE.Color }; waveWidth: { value: number } };
+  userData: {
+    waves: { value: number[] }; waveColor: { value: THREE.Color }; waveWidth: { value: number };
+    rim: { value: THREE.Color }; light: { value: number };
+    /** dark-stage values, restored when the theme switches back */
+    dark: { color: THREE.Color; rim: THREE.Color; wave: THREE.Color; opacity: number };
+  };
+}
+
+/**
+ * Switch a membrane between the dark stage (rim light and wave glow are added) and the light stage
+ * (tinted glass: the rim and the wave are drawn as ink that darkens and thickens the shell).
+ */
+export function setMembraneLight(m: MembraneMaterial, light: boolean,
+  lit: { color?: THREE.ColorRepresentation; rim?: THREE.ColorRepresentation; wave?: THREE.ColorRepresentation; opacity?: number } = {}) {
+  const u = m.userData, d = u.dark;
+  u.light.value = light ? 1 : 0;
+  if (light) {
+    m.color.set(lit.color ?? ink(d.color, 0.5));
+    u.rim.value.set(lit.rim ?? ink(d.color, 0.3));
+    u.waveColor.value.set(lit.wave ?? '#f08a00');
+    m.opacity = lit.opacity ?? d.opacity;
+    u.waveWidth.value = 0.7;
+  } else {
+    u.waveWidth.value = 1.1;
+    m.color.copy(d.color); u.rim.value.copy(d.rim); u.waveColor.value.copy(d.wave); m.opacity = d.opacity;
+  }
 }
 
 /** soft translucent membrane: fresnel rim + up to four travelling glow bands (action potentials) along y */
@@ -132,24 +170,37 @@ export function membraneMaterial(color: THREE.ColorRepresentation, opts: { opaci
   const waveColor = { value: new THREE.Color('#fff2c4') };
   const waveWidth = { value: 1.1 };
   const rim = { value: new THREE.Color(opts.rim ?? color).lerp(new THREE.Color('#ffffff'), 0.35) };
-  m.userData = { waves, waveColor, waveWidth };
+  const light = { value: 0 };
+  m.userData = {
+    waves, waveColor, waveWidth, rim, light,
+    dark: { color: new THREE.Color(color), rim: rim.value.clone(), wave: waveColor.value.clone(), opacity: m.opacity },
+  };
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWaves = waves;
     shader.uniforms.uWaveColor = waveColor;
     shader.uniforms.uWaveWidth = waveWidth;
     shader.uniforms.uRim = rim;
+    shader.uniforms.uLight = light;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying float vAxY;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAxY = position.y;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vAxY;\nuniform float uWaves[4];\nuniform vec3 uWaveColor;\nuniform float uWaveWidth;\nuniform vec3 uRim;')
+      .replace('#include <common>', '#include <common>\nvarying float vAxY;\nuniform float uWaves[4];\nuniform vec3 uWaveColor;\nuniform float uWaveWidth;\nuniform vec3 uRim;\nuniform float uLight;')
       .replace('#include <opaque_fragment>', `
         float fres = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.2);
         float wave = 0.0;
         for (int i = 0; i < 4; i++) { float d = (vAxY - uWaves[i]) / uWaveWidth; wave += exp(-d * d); }
         wave = min(wave, 1.6);
-        outgoingLight += uRim * fres * 0.55 + uWaveColor * wave * 1.1;
-        diffuseColor.a = clamp(diffuseColor.a + fres * 0.32 + wave * 0.35, 0.0, 1.0);
+        if (uLight > 0.5) {
+          // light stage: rim and wave are ink — they tint and thicken the glass instead of adding light
+          outgoingLight = mix(outgoingLight, uRim, fres * 0.6);
+          float band = min(wave, 1.0);
+          outgoingLight = mix(outgoingLight, uWaveColor, band * 0.7);
+          diffuseColor.a = clamp(diffuseColor.a + fres * 0.42 + band * 0.3, 0.0, 1.0);
+        } else {
+          outgoingLight += uRim * fres * 0.55 + uWaveColor * wave * 1.1;
+          diffuseColor.a = clamp(diffuseColor.a + fres * 0.32 + wave * 0.35, 0.0, 1.0);
+        }
         #include <opaque_fragment>`);
   };
   return m;
@@ -193,10 +244,19 @@ const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _q2 = new THREE.Qua
 const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _c = new THREE.Color();
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
+const _hsl = { h: 0, s: 0, l: 0 };
+/** light stage: cap the lightness of a (shaded, solid) colour and saturate it a little */
+export function deepen(c: THREE.Color, target: THREE.Color, maxL = 0.6): THREE.Color {
+  c.getHSL(_hsl);
+  return target.setHSL(_hsl.h, Math.min(1, _hsl.s * 1.25 + 0.04), Math.min(_hsl.l, maxL));
+}
+
 /** many small membrane proteins, each a ring of capsule "subunits", drawn as one InstancedMesh */
 export class ProteinSet {
   readonly mesh: THREE.InstancedMesh;
   private anchors: { pos: THREE.Vector3; axis: THREE.Vector3; style: ProteinStyle }[] = [];
+  /** on the light stage pale subunit colours are deepened so they stand out from the pale membranes */
+  light = false;
   constructor(readonly max: number, readonly kMax: number) {
     const geo = new THREE.CapsuleGeometry(1, 2, 3, 10);
     geo.scale(1, 0.5, 1); // total height 2 → unit half-length
@@ -228,6 +288,7 @@ export class ProteinSet {
     _z.crossVectors(_x, _y).normalize();
     _x.crossVectors(_y, _z).normalize();
     _q.setFromUnitVectors(_p.set(0, 1, 0), _y);
+    if (this.light) color = deepen(color, _c);
     for (let k = 0; k < this.kMax; k++) {
       const id = i * this.kMax + k;
       if (k >= st.k || present <= 0.001) { this.mesh.setMatrixAt(id, ZERO); continue; }
@@ -255,31 +316,41 @@ export class ProteinSet {
 /** soft additive glow sprites with per-point colour and size */
 export class GlowPoints {
   readonly points: THREE.Points;
-  private pos: Float32Array; private col: Float32Array; private size: Float32Array;
+  private pos: Float32Array; private col: Float32Array; private size: Float32Array; private inten: Float32Array;
   private n = 0;
+  private light = false;
+  private inks = new Map<number, THREE.Color>();
   constructor(readonly max: number, pixelRatio: number) {
-    this.pos = new Float32Array(max * 3); this.col = new Float32Array(max * 3); this.size = new Float32Array(max);
+    this.pos = new Float32Array(max * 3); this.col = new Float32Array(max * 3); this.size = new Float32Array(max); this.inten = new Float32Array(max);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('size', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute('inten', new THREE.BufferAttribute(this.inten, 1).setUsage(THREE.DynamicDrawUsage));
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uScale: { value: 600 * pixelRatio } },
+      uniforms: { uScale: { value: 600 * pixelRatio }, uLight: { value: 0 } },
       vertexShader: `
-        attribute float size; attribute vec3 color; varying vec3 vColor; uniform float uScale;
+        attribute float size; attribute float inten; attribute vec3 color; uniform float uScale;
+        varying vec3 vColor; varying float vInten; varying float vCore;
         void main() {
-          vColor = color;
+          vColor = color; vInten = inten;
+          // small points (ions, molecules) get a solid ink core on the light stage; big flashes stay soft
+          vCore = clamp(1.0 - (size - 0.3) / 0.5, 0.0, 1.0);
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
           gl_Position = projectionMatrix * mv;
           gl_PointSize = min(size * uScale * projectionMatrix[1][1] * 0.5 / -mv.z, 160.0);
         }`,
       fragmentShader: `
-        varying vec3 vColor;
+        varying vec3 vColor; varying float vInten; varying float vCore; uniform float uLight;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           if (d > 1.0) discard;
           float a = smoothstep(1.0, 0.0, d);
-          gl_FragColor = vec4(vColor * a * a, 0.0);
+          if (uLight > 0.5) {
+            // light stage: translucent ink — a saturated core with a short soft edge, intensity in alpha
+            float core = smoothstep(0.8, 0.25, d) * vCore;
+            gl_FragColor = vec4(vColor, clamp(vInten * (a * a * 0.85 + core * 0.6), 0.0, 0.9));
+          } else gl_FragColor = vec4(vColor * vInten * a * a, 0.0);
         }`,
       // pure add to colour, leave the canvas alpha alone (the page background shows through the canvas)
       transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
@@ -293,18 +364,39 @@ export class GlowPoints {
   setViewport(heightPx: number) {
     (this.points.material as THREE.ShaderMaterial).uniforms.uScale.value = heightPx;
   }
+  /** dark stage: additive glow. light stage: alpha-blended ink of the same hue. */
+  setLight(light: boolean) {
+    this.light = light;
+    const m = this.points.material as THREE.ShaderMaterial;
+    m.uniforms.uLight.value = light ? 1 : 0;
+    m.blending = light ? THREE.NormalBlending : THREE.CustomBlending;
+    m.needsUpdate = true;
+  }
+  private inkOf(c: THREE.Color): THREE.Color {
+    const key = c.getHex();
+    let v = this.inks.get(key);
+    if (!v) {
+      if (this.inks.size > 400) this.inks.clear();
+      c.getHSL(_hsl);
+      // whites and greys have no hue to keep: draw them as slate
+      v = _hsl.s < 0.12 ? new THREE.Color('#46557a') : ink(c, 0.44, new THREE.Color());
+      this.inks.set(key, v);
+    }
+    return v;
+  }
   begin() { this.n = 0; }
   add(x: number, y: number, z: number, c: THREE.Color, size: number, intensity = 1) {
     if (this.n >= this.max) return;
     const i = this.n++;
     this.pos[i * 3] = x; this.pos[i * 3 + 1] = y; this.pos[i * 3 + 2] = z;
-    this.col[i * 3] = c.r * intensity; this.col[i * 3 + 1] = c.g * intensity; this.col[i * 3 + 2] = c.b * intensity;
-    this.size[i] = size;
+    if (this.light) c = this.inkOf(c);
+    this.col[i * 3] = c.r; this.col[i * 3 + 1] = c.g; this.col[i * 3 + 2] = c.b;
+    this.size[i] = size; this.inten[i] = intensity;
   }
   end() {
     const g = this.points.geometry;
     g.setDrawRange(0, this.n);
-    g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true; g.attributes.size.needsUpdate = true;
+    g.attributes.position.needsUpdate = true; g.attributes.color.needsUpdate = true; g.attributes.size.needsUpdate = true; g.attributes.inten.needsUpdate = true;
   }
 }
 

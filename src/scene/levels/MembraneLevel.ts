@@ -10,6 +10,7 @@ import { HodgkinHuxley, restingPotential } from '../../sim/hodgkinHuxley';
 import { Cable, STIM_DENSITY, STIM_MS } from '../../sim/cable';
 import { MembranePatch } from '../procedural/membranePatch';
 import { AXON, AxonModel } from '../procedural/membraneAxon';
+import { onTheme } from '../theme3d';
 
 const PULSE_MS = 0.5;
 const SUB = 0.01; // ms, integration sub-step for the patch
@@ -79,6 +80,7 @@ export class MembraneLevel extends Level {
     this.seen = { stim: m.stimNonce, dbl: m.doubleNonce, step: m.stepNonce, reset: m.resetNonce, axonStim: m.axonStimNonce };
     this.applyView(m.view, false);
     this.unsub.push(
+      onTheme((light) => { this.patch.setTheme(light); this.axon.setTheme(light); }),
       useMembrane.subscribe((s, p) => {
         if (s.view !== p.view) this.applyView(s.view, true);
       }),

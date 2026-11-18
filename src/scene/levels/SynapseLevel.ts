@@ -12,8 +12,10 @@ import {
 } from '../../content/synapse';
 import {
   AXON_R, AXON_TOP, GlowPoints, ProteinSet, astroGeometry, astroProfile, bendX, cristaeTexture, cutRibbon, halfShell,
-  membraneMaterial, moleculeGeometry, pacmanGeometry, postProfile, preProfile, radiusAt, type MembraneMaterial, type ProteinStyle,
+  deepen, membraneMaterial, moleculeGeometry, pacmanGeometry, postProfile, preProfile, radiusAt, recolorRibbon, setMembraneLight,
+  type MembraneMaterial, type ProteinStyle,
 } from '../procedural/synapseParts';
+import { ink, onTheme } from '../theme3d';
 
 const { H, R } = GEO;
 const col = (c: string) => new THREE.Color(c);
@@ -33,6 +35,10 @@ const RECEPTOR_STYLE: Record<ReceptorKind, ProteinStyle & { color: string }> = {
   d2: { k: 7, ringR: 0.1, subR: 0.042, len: 0.21, widen: 0.0, twist: 0.12, color: '#b9a0f0' },
   '5ht': { k: 7, ringR: 0.1, subR: 0.042, len: 0.21, widen: 0.0, twist: 0.12, color: '#c9b6f7' },
 };
+type Bands = [string, string, string];
+/** the bilayer seen edge-on (outer leaflet, oily core, inner leaflet): pale leaflets on the dark stage, inked on the light one */
+const PRE_CUT: { dark: Bands; light: Bands } = { dark: ['#c9d8ff', '#33415f', '#8fa8e6'], light: ['#2f4fa6', '#e6ecff', '#5f7fd0'] };
+const POST_CUT: { dark: Bands; light: Bands } = { dark: ['#ead8f6', '#44355a', '#c3a2dc'], light: ['#6a3f93', '#f3e9fa', '#a074c2'] };
 const CA_STYLE: ProteinStyle = { k: 4, ringR: 0.1, subR: 0.07, len: 0.2, widen: 0.65, twist: 0.32 };
 const TRANSPORTER_STYLE: ProteinStyle = { k: 2, ringR: 0.085, subR: 0.095, len: 0.22, widen: 0.35, twist: 0.2 };
 
@@ -53,6 +59,14 @@ export class SynapseLevel extends Level {
   private shown: TransmitterId | null = null;
   private preMat!: MembraneMaterial;
   private postMat!: MembraneMaterial;
+  private astroMat!: MembraneMaterial;
+  private light = false;
+  /** materials and meshes whose colours differ between the dark and the light stage */
+  private themedParts!: {
+    preCut: THREE.Mesh; postCut: THREE.Mesh; az: THREE.MeshStandardMaterial; psd: THREE.MeshStandardMaterial;
+    astroCaps: THREE.MeshStandardMaterial; astroRim: THREE.LineBasicMaterial; shell: THREE.MeshPhysicalMaterial;
+    pores: THREE.MeshBasicMaterial; markers: THREE.MeshStandardMaterial;
+  };
   private pickables: { obj: THREE.Object3D; id: string; protein?: boolean }[] = [];
   private cleftPick!: THREE.Mesh;
 
@@ -94,7 +108,7 @@ export class SynapseLevel extends Level {
   private tColor = col('#ffa53d');
   private cCa = col(COLORS.ca); private cNa = col(COLORS.na); private cCl = col(COLORS.cl);
   private cMess = col(COLORS.messenger); private cWhite = col('#ffffff'); private cSpike = col(COLORS.spike);
-  private tmpC = new THREE.Color(); private tmpC2 = new THREE.Color();
+  private tmpC = new THREE.Color(); private tmpC2 = new THREE.Color(); private tmpC3 = new THREE.Color();
   private m4 = new THREE.Matrix4(); private q = new THREE.Quaternion(); private v3 = new THREE.Vector3(); private s3 = new THREE.Vector3();
   private e3 = new THREE.Euler();
 
@@ -108,12 +122,14 @@ export class SynapseLevel extends Level {
     this.preMat = membraneMaterial(COLORS.pre, { opacity: 0.46 });
     this.postMat = membraneMaterial(COLORS.post, { opacity: 0.5 });
     this.postMat.userData.waveColor.value.set('#ffe0a0');
+    this.postMat.userData.dark.wave.set('#ffe0a0');
     const preShell = new THREE.Mesh(halfShell(pre, bendX), this.preMat);
     const postShell = new THREE.Mesh(halfShell(post), this.postMat);
     preShell.renderOrder = 1; postShell.renderOrder = 1;
     root.add(preShell, postShell);
-    root.add(cutRibbon(pre, ['#c9d8ff', '#33415f', '#8fa8e6'], 0.13, bendX));
-    root.add(cutRibbon(post, ['#ead8f6', '#44355a', '#c3a2dc'], 0.13));
+    const preCut = cutRibbon(pre, PRE_CUT.dark, 0.13, bendX);
+    const postCut = cutRibbon(post, POST_CUT.dark, 0.13);
+    root.add(preCut, postCut);
     this.pickables.push({ obj: preShell, id: 'terminal' }, { obj: postShell, id: 'spine' });
 
     // active zone (where vesicles dock) and postsynaptic density (the scaffold that holds receptors)
@@ -131,7 +147,7 @@ export class SynapseLevel extends Level {
     const arc = GEO.ASTRO_TO + 0.12;
     const ag = astroGeometry(aProf, arc);
     // drawn solid: it sits behind the translucent neurons from most viewpoints
-    const astroMat = membraneMaterial('#4a9485', { opacity: 1, repeat: [18, 30] });
+    const astroMat = this.astroMat = membraneMaterial('#4a9485', { opacity: 1, repeat: [18, 30] });
     astroMat.transparent = false; astroMat.depthWrite = true;
     const astro = new THREE.Mesh(ag.body, astroMat);
     const astroCaps = new THREE.Mesh(ag.caps, new THREE.MeshStandardMaterial({
@@ -225,11 +241,45 @@ export class SynapseLevel extends Level {
     this.cleftPick = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 2 * H - 0.3, 24, 1, false, Math.PI / 2, Math.PI), new THREE.MeshBasicMaterial({ visible: false }));
     root.add(this.cleftPick);
 
+    this.themedParts = {
+      preCut, postCut, az: az.material, psd: psd.material, astroCaps: astroCaps.material, astroRim: astroRim.material,
+      shell: this.vesShell.material as THREE.MeshPhysicalMaterial, pores: this.pores.material as THREE.MeshBasicMaterial,
+      markers: this.markers.material as THREE.MeshStandardMaterial,
+    };
+    this.applyTheme(false);
+
     this.buildTags();
     this.fitHome();
     syncSim();
     this.rebuild();
     this.draw();
+  }
+
+  /**
+   * Dark stage: glowing particles and rim-lit membranes. Light stage: tinted glass with an inked bilayer edge,
+   * ink-coloured particles and lower emissive so nothing bleaches against the pale background.
+   */
+  private applyTheme(light: boolean) {
+    this.light = light;
+    const p = this.themedParts;
+    setMembraneLight(this.preMat, light, { color: '#5f7fd0', rim: '#27408f', wave: '#f28a00', opacity: 0.4 });
+    setMembraneLight(this.postMat, light, { color: '#a374c4', rim: '#5d2f85', wave: '#ee7a12', opacity: 0.44 });
+    setMembraneLight(this.astroMat, light, { color: '#4a9485', rim: '#2c7466', opacity: 1 });
+    recolorRibbon(p.preCut, light ? PRE_CUT.light : PRE_CUT.dark);
+    recolorRibbon(p.postCut, light ? POST_CUT.light : POST_CUT.dark);
+    p.az.color.set(light ? '#5f7fd0' : '#b9c9f2'); p.az.opacity = light ? 0.3 : 0.35;
+    p.psd.color.set(light ? '#7a4fa0' : '#6b4f86'); p.psd.opacity = light ? 0.5 : 0.55;
+    p.astroCaps.color.set(light ? '#3d8676' : '#2f6e62');
+    p.astroRim.color.set(light ? '#1c5c4f' : '#a6e6d6');
+    p.shell.color.set(light ? '#dfe6f5' : '#e9f0ff'); p.shell.opacity = light ? 0.14 : 0.2;
+    p.pores.color.set(light ? '#2a3350' : '#ffffff');
+    p.markers.emissiveIntensity = light ? 0.04 : 0.12;
+    this.coreMat.emissiveIntensity = light ? 0.28 : 0.16;
+    this.molMat.emissiveIntensity = light ? 0.3 : 0.7;
+    for (const set of [this.caChannels, this.receptors, this.transporters]) set.light = light;
+    this.glow.setLight(light);
+    (this.messengerLight.material as THREE.MeshBasicMaterial).color.set(light ? ink(COLORS.messenger, 0.5) : COLORS.messenger);
+    this.shown = null; // transmitter colours are theme-dependent: rebuild on the next frame
   }
 
   private makeTag(id: string, text: string, pos: THREE.Vector3, minor = false, cls = ''): Tag {
@@ -292,6 +342,7 @@ export class SynapseLevel extends Level {
     this.applySelection(useCore.getState().selection.synapse, false);
     this.syncTags();
     this.unsub.push(
+      onTheme((light) => { if (light !== this.light) this.applyTheme(light); }),
       useSynapse.subscribe((n, p) => {
         syncSim();
         if (n.labels !== p.labels) this.syncTags();
@@ -376,8 +427,10 @@ export class SynapseLevel extends Level {
     this.shown = sim.transmitter;
     const info = transmitterById.get(sim.transmitter)!;
     this.tColor.set(info.color);
-    this.coreMat.color.copy(this.tColor); this.coreMat.emissive.copy(this.tColor);
-    this.molMat.color.copy(this.tColor); this.molMat.emissive.copy(this.tColor);
+    // light stage: the solid cores and molecules take a deeper version of the transmitter colour
+    const solid = this.light ? ink(info.color, 0.4, this.tmpC) : this.tColor;
+    this.coreMat.color.copy(solid); this.coreMat.emissive.copy(solid);
+    this.molMat.color.copy(solid); this.molMat.emissive.copy(solid);
     this.molecules.geometry = this.molGeos.get(sim.transmitter)!;
     this.receptors.setCount(sim.receptors.length);
     sim.receptors.forEach((r, i) => this.receptors.place(i, new THREE.Vector3(r.x, -H, r.z), UP, RECEPTOR_STYLE[r.kind]));
@@ -551,7 +604,7 @@ export class SynapseLevel extends Level {
       if (nM >= this.markers.count) return;
       m4.makeScale(size, size * sy, size).setPosition(x, y, z);
       this.markers.setMatrixAt(nM, m4);
-      this.markers.setColorAt(nM, c);
+      this.markers.setColorAt(nM, this.light ? deepen(c, this.tmpC3, 0.55) : c);
       nM++;
     };
     const drugColor = (id: string) => tmpC2.set(drugById.get(id)!.color);
@@ -591,7 +644,8 @@ export class SynapseLevel extends Level {
         this.gproteins.setMatrixAt(nG, m4);
         const base = r.kind === 'd2' ? tmpC.set('#8fa0d8') : tmpC.set('#d9a0c4');
         if (r.blocked) base.multiplyScalar(0.5);
-        this.gproteins.setColorAt(nG, base.lerp(r.kind === 'd2' ? tmpC2.set('#9fc0ff') : this.cMess, a * 0.6));
+        base.lerp(r.kind === 'd2' ? tmpC2.set('#9fc0ff') : this.cMess, a * 0.6);
+        this.gproteins.setColorAt(nG, this.light ? deepen(base, base, 0.58) : base);
         if (a > 0.05) glow.add(r.x + 0.12 + a * 0.12, -H - 0.3 - a * 0.42, r.z - a * 0.1, r.kind === 'd2' ? tmpC2.set('#7f9cff') : this.cMess, 0.8, 0.6 * a);
         nG++;
       }
@@ -670,7 +724,7 @@ export class SynapseLevel extends Level {
     }
     // --- second messenger cloud
     const mess = sim.messenger;
-    (this.messengerLight.material as THREE.MeshBasicMaterial).opacity = mess * 0.16;
+    (this.messengerLight.material as THREE.MeshBasicMaterial).opacity = mess * (this.light ? 0.2 : 0.16);
     this.messengerLight.visible = mess > 0.01;
     const nCloud = Math.round(mess * this.cloud.length);
     for (let i = 0; i < nCloud; i++) {
