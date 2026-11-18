@@ -4,6 +4,7 @@ import { createLevels } from './scene/levels';
 import { LEVELS, levelIndex, useCore } from './state/store';
 import { PANELS } from './ui/panels';
 import { useBrain } from './state/brainState';
+import { useTheme } from './state/theme';
 import { DiveHint, HoverTip, Loading, ScaleRail, TopBar } from './ui/Chrome';
 import { Overlays } from './ui/Overlays';
 
@@ -25,7 +26,7 @@ export function App() {
     createLevels().forEach((l) => manager.register(l));
     const start = (new URLSearchParams(location.search).get('level') as typeof level) || 'brain';
     void manager.start(LEVELS.some((l) => l.id === start) ? start : 'brain');
-    window.__brain = { manager, core: useCore, brain: useBrain };
+    window.__brain = { manager, core: useCore, brain: useBrain, theme: useTheme };
     return () => manager.dispose();
   }, []);
 

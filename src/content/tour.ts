@@ -17,7 +17,7 @@ export interface TourStep {
 }
 
 const sel = (level: LevelId, id: string | null) => useCore.getState().select(level, id);
-const brainDefaults = { granularity: 'lobes' as const, cortexOpacity: 1, showLeft: true, showRight: true, explode: 0, clipAxis: 'none' as const, clipPos: 0 };
+const brainDefaults = { granularity: 'lobes' as const, cortexOpacity: 0.88, showLeft: true, showRight: true, explode: 0, clipAxis: 'none' as const, clipPos: 0 };
 
 export const TOUR: TourStep[] = [
   {

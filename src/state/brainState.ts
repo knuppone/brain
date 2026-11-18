@@ -14,7 +14,7 @@ interface BrainState {
 
 export const useBrain = create<BrainState>((set) => ({
   granularity: 'lobes',
-  cortexOpacity: 1,
+  cortexOpacity: 0.88,
   showLeft: true,
   showRight: true,
   explode: 0,

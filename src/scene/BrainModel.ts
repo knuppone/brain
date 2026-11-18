@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { AREAS, DEEP, LOBES, structureById, type Structure } from '../content/regions';
+import { onTheme, setGlowBlend } from './theme3d';
 
 /** MNI millimetres (x right, y front, z up) → scene centimetres (+x subject-left, +y up, +z front) */
 export const mni = (x: number, y: number, z: number) => new THREE.Vector3(-x / 10, z / 10, y / 10);
@@ -35,7 +36,7 @@ export interface BrainView {
 }
 
 const DEFAULT_VIEW: BrainView = {
-  granularity: 'lobes', selected: null, hovered: null, cortexOpacity: 1, showLeft: true, showRight: true,
+  granularity: 'lobes', selected: null, hovered: null, cortexOpacity: 0.88, showLeft: true, showRight: true,
   explode: 0, clipAxis: 'none', clipPos: 0, glass: false, lit: [],
 };
 
@@ -62,13 +63,32 @@ const DARK = new THREE.Color('#596072');
 const DIM = new THREE.Color('#6d7282');
 const tmpC = new THREE.Color();
 
+/** resting opacity of deep structures: just enough translucency to feel like tissue, not plastic */
+const DEEP_OPACITY = 0.92;
+/** shared by every brain material: strength and colour of the soft rim light */
+export const brainRim = { strength: { value: 0.3 }, color: { value: new THREE.Color('#dfe9ff') } };
+
+function addRim(material: THREE.MeshStandardMaterial) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uRim = brainRim.strength;
+    shader.uniforms.uRimColor = brainRim.color;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uRim;\nuniform vec3 uRimColor;')
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+        totalEmissiveRadiance += uRimColor * uRim * pow(1.0 - clamp(abs(dot(normal, normalize(vViewPosition))), 0.0, 1.0), 3.0);`,
+      );
+  };
+}
+
 function glassMaterial() {
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
     side: THREE.FrontSide,
     blending: THREE.AdditiveBlending,
-    uniforms: { uColor: { value: new THREE.Color('#8fb4ff') }, uStrength: { value: 1 } },
+    uniforms: { uColor: { value: new THREE.Color('#8fb4ff') }, uStrength: { value: 1 }, uLight: { value: 0 } },
     vertexShader: /* glsl */ `
       varying vec3 vN; varying vec3 vV;
       void main(){
@@ -77,10 +97,12 @@ function glassMaterial() {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uColor; uniform float uStrength; varying vec3 vN; varying vec3 vV;
+      uniform vec3 uColor; uniform float uStrength; uniform float uLight; varying vec3 vN; varying vec3 vV;
       void main(){
         float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
-        gl_FragColor = vec4(uColor * (0.05 + f * 0.75) * uStrength, 1.0);
+        // dark stage: add light. light stage: translucent ink of the same shape.
+        if (uLight > 0.5) gl_FragColor = vec4(uColor, (0.035 + f * 0.5) * uStrength);
+        else gl_FragColor = vec4(uColor * (0.05 + f * 0.75) * uStrength, 1.0);
       }`,
   });
 }
@@ -94,8 +116,12 @@ export class BrainModel {
   private parts: Part[] = [];
   private byStem = new Map<string, Part[]>();
   private glass = glassMaterial();
+  /** outline colour of the glass brain per theme (Systems level may tune these) */
+  glassDark = '#8fb4ff';
+  glassLight = '#3d5aa8';
   private centroidCache = new Map<string, THREE.Vector3>();
   private dirty = true;
+  private light = false;
   private static instance: Promise<BrainModel> | null = null;
 
   static load(onProgress?: (p: number) => void): Promise<BrainModel> {
@@ -148,6 +174,7 @@ export class BrainModel {
         emissive: new THREE.Color(0xffffff),
         emissiveIntensity: 0,
       });
+      addRim(material);
       const fresh = new THREE.Mesh(geometry, material);
       fresh.name = name;
       const centroid = geometry.boundingBox!.getCenter(new THREE.Vector3());
@@ -169,15 +196,16 @@ export class BrainModel {
         fresh.add(cap);
         part.cap = cap;
       }
-      if (cortex) {
-        // depth pre-pass: when the cortex is see-through only its nearest surface is drawn,
-        // which keeps the ghosted brain clean instead of a stack of overlapping sheets
+      {
+        // Depth pre-pass: a translucent part first writes only depth, then draws its colour
+        // where it is nearest. Each structure shows a single clean surface, and whatever was
+        // drawn before it (deeper structures) shows faintly through.
         const pre = new THREE.Mesh(
           geometry,
-          new THREE.MeshBasicMaterial({ colorWrite: false, clippingPlanes: [this.clipPlane] }),
+          new THREE.MeshBasicMaterial({ colorWrite: false, transparent: true, side: THREE.DoubleSide, clippingPlanes: [this.clipPlane] }),
         );
         pre.visible = false;
-        pre.renderOrder = 1;
+        pre.renderOrder = cortex ? 3 : 1;
         pre.raycast = () => {};
         fresh.add(pre);
         part.prepass = pre;
@@ -214,6 +242,17 @@ export class BrainModel {
         p.explodeDir.x += side * 0.5;
       }
     }
+    onTheme((light) => {
+      this.light = light;
+      setGlowBlend(this.glass, light);
+      this.glass.uniforms.uLight.value = light ? 1 : 0;
+      this.glass.uniforms.uColor.value.set(light ? this.glassLight : this.glassDark);
+      brainRim.strength.value = light ? 0.1 : 0.3;
+      GREY.set(light ? '#b4b9c6' : '#8b8f9a');
+      DARK.set(light ? '#a3a9b8' : '#596072');
+      DIM.set(light ? '#b9bdc9' : '#6d7282');
+      this.dirty = true;
+    });
     this.refresh(true);
     return this;
   }
@@ -304,20 +343,27 @@ export class BrainModel {
       let emissive = 0;
 
       if (p.cortex) {
-        opacity *= v.cortexOpacity;
+        // the top of the slider range snaps to fully solid; slices are always shown solid
+        const solid = v.cortexOpacity > 0.97 || (clipping && v.cortexOpacity > 0.8);
+        opacity *= solid ? 1 : v.cortexOpacity;
         if (sel && !selParts.has(p)) {
           base.lerp(DIM, 0.78);
           if (selIsDeep) opacity *= 0.16;
         }
-      } else if (sel && !selParts.has(p)) {
-        base.lerp(selIsDeep ? DARK : GREY, selIsDeep ? 0.8 : 0.6);
+      } else {
+        if (!clipping) opacity *= DEEP_OPACITY;
+        if (sel && !selParts.has(p)) base.lerp(selIsDeep ? DARK : GREY, selIsDeep ? 0.8 : 0.6);
       }
-      if (selParts.has(p)) emissive = selIsDeep ? 0.4 : 0.22;
-      if (hovParts.has(p) && !selParts.has(p)) emissive = 0.14;
+      if (selParts.has(p)) {
+        // on the pale stage a glow only bleaches the colour; the dimmed neighbours do the highlighting
+        emissive = this.light ? 0.04 : selIsDeep ? 0.4 : 0.22;
+        if (hemiVisible) opacity = 1;
+      }
+      if (hovParts.has(p) && !selParts.has(p)) emissive = this.light ? 0.07 : 0.14;
 
       if (v.glass) {
         if (p.cortex) opacity = hemiVisible ? 1 : 0;
-        else if (lit.has(p)) { opacity = 0.95; emissive = 0.35; }
+        else if (lit.has(p)) { opacity = 0.95; emissive = this.light ? 0.05 : 0.35; }
         else { opacity *= 0.16; base.lerp(GREY, 0.5); }
       }
 
@@ -353,9 +399,10 @@ export class BrainModel {
       p.material.depthFunc = THREE.LessEqualDepth;
       p.material.needsUpdate = true;
     }
-    if (p.prepass) p.prepass.visible = transparent && o > 0.012 && p.mesh.material !== this.glass;
+    // no pre-pass while a part fades out, or it would hide what is behind it on the way
+    if (p.prepass) p.prepass.visible = transparent && o > 0.012 && p.targetOpacity > 0.012 && p.mesh.material !== this.glass;
     p.mesh.visible = o > 0.012 || p.mesh.material === this.glass && p.targetOpacity > 0;
-    p.mesh.renderOrder = transparent ? (p.cortex ? 3 : 2) : 0;
+    p.mesh.renderOrder = transparent ? (p.cortex ? 4 : 2) : 0;
   }
 
   update(dt: number) {

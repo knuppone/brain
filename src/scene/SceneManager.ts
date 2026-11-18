@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { LEVELS, levelIndex, navigation, useCore, type LevelId } from '../state/store';
 import type { Level, LevelContext } from './Level';
+import { onTheme } from './theme3d';
 
 const ease = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
@@ -86,6 +87,17 @@ export class SceneManager {
     rig.add(key, rim);
     this.camera.add(rig);
     this.scene.add(hemi, this.camera);
+
+    // the light theme has a pale stage: lift the fill light so solids stay clean, not murky
+    onTheme((light) => {
+      this.renderer.toneMappingExposure = light ? 0.94 : 0.92;
+      this.scene.environmentIntensity = light ? 0.42 : 0.32;
+      hemi.intensity = light ? 0.8 : 0.3;
+      hemi.color.set(light ? 0xffffff : 0xdfe8ff);
+      hemi.groundColor.set(light ? 0xb9c0d0 : 0x1a1420);
+      key.intensity = light ? 2.1 : 2.5;
+      rim.intensity = light ? 0.5 : 1.1;
+    });
 
     this.bindEvents();
     this.resize();
