@@ -51,7 +51,7 @@ export function App() {
 
   const { Panel, Dock } = PANELS[level];
   return (
-    <div className={`app ${panelOpen ? '' : 'panel-closed'}`}>
+    <div className={`app ${panelOpen ? '' : 'panel-closed'}`} data-level={level}>
       <div className="stage" ref={stageRef} />
       <div className="fade" ref={fadeRef} />
       <TopBar onReset={() => managerRef.current?.resetView()} />

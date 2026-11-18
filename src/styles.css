@@ -334,8 +334,11 @@ input[type='range']::-moz-range-thumb {
 .tour .try { margin-top: 8px; color: var(--dim); font-size: 13px; }
 .tour .nav { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
 .tour .pips { display: flex; gap: 4px; flex: 1; }
-.tour .pips i { width: 14px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
+.tour .pips i { width: 9px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.15); }
 .tour .pips i.on { background: var(--accent); }
+
+/* the membrane level has a status banner along the top: keep the tour card clear of it */
+@media (min-width: 861px) { .app[data-level='membrane'] .tour { top: calc(var(--top-h) + 108px); } }
 
 /* quiz */
 .quiz-q { font-size: 17px; font-weight: 620; margin-bottom: 12px; text-wrap: balance; }
