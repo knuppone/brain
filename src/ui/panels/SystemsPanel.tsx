@@ -73,7 +73,7 @@ export function SystemsPanel() {
   const items = systemsOf(mode);
   return (
     <>
-      <Header eyebrow="Level 3 · Systems" title="How the regions talk"
+      <Header eyebrow="Level 2 · Systems" title="How the regions talk"
         lede={chemical
           ? 'A few tiny clusters of neurons deep in the brain spray one chemical each across huge territories, tuning how everything else works.'
           : 'Every skill is a route: signals pass from station to station along cables of white matter. Pick one and follow it.'} />

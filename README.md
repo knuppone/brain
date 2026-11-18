@@ -1,11 +1,10 @@
 # Brain Explorer
 
-An interactive 3D journey through the human brain — from the scalp down to a single ion channel.
-Six levels, each roughly a thousand times smaller than the last, joined by one continuous zoom.
+An interactive 3D journey through the human brain — from the whole organ down to a single ion channel.
+Five levels, each roughly a thousand times smaller than the last, joined by one continuous zoom.
 
 | Level | Scale | What you explore |
 |-------|-------|------------------|
-| **Head** | ~20 cm | Scalp, skull, meninges and cerebrospinal fluid — peel them away one at a time |
 | **Brain** | ~15 cm | Lobes, 34 cortical areas and the deep structures; slice, explode, ghost the cortex |
 | **Systems** | ~10 cm | Dopamine, serotonin and other chemical systems; pathways for vision, movement, memory, fear |
 | **Cells** | ~1 mm | Neurons and glia in a cortical column, with a live excitatory/inhibitory microcircuit |
@@ -23,13 +22,13 @@ npm run build      # static site in dist/ — host it anywhere
 npm test           # simulation unit tests
 ```
 
-Append `?level=brain` (or `head`, `systems`, `cells`, `synapse`, `membrane`) to open a level directly.
+Append `?level=brain` (or `systems`, `cells`, `synapse`, `membrane`) to open a level directly.
 
 ## Controls
 
 - **Drag** rotate · **scroll / pinch** zoom · **right-drag** pan · **click** select · **double-click** focus / drill down
 - Keep scrolling past the zoom limit to dive into the next level (or pull back to the previous one)
-- `/` search · `1`–`6` levels · `[` `]` previous / next level · `R` reset view · `Esc` deselect
+- `/` search · `1`–`5` levels · `[` `]` previous / next level · `R` reset view · `Esc` deselect
 
 ## How it is built
 
@@ -42,11 +41,11 @@ Append `?level=brain` (or `head`, `systems`, `cells`, `synapse`, `membrane`) to 
 
 ### Anatomy pipeline
 
-The head and brain meshes come from real imaging data (see [ATTRIBUTION.md](ATTRIBUTION.md)).
+The brain meshes come from real imaging data (see [ATTRIBUTION.md](ATTRIBUTION.md)).
 To rebuild them:
 
 ```bash
-pip install nibabel numpy scipy scikit-image trimesh fast-simplification shapely mapbox-earcut
+pip install nibabel numpy scipy scikit-image trimesh fast-simplification
 scripts/fetch_sources.sh .sources
 python3 scripts/build_models.py .sources public/models
 ```

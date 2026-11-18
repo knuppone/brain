@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type LevelId = 'head' | 'brain' | 'systems' | 'cells' | 'synapse' | 'membrane';
+export type LevelId = 'brain' | 'systems' | 'cells' | 'synapse' | 'membrane';
 
 export interface LevelMeta {
   id: LevelId;
@@ -11,7 +11,6 @@ export interface LevelMeta {
 }
 
 export const LEVELS: LevelMeta[] = [
-  { id: 'head', name: 'Head', scale: '~20 cm', blurb: 'Skin, bone and the membranes that protect the brain.' },
   { id: 'brain', name: 'Brain', scale: '~15 cm', blurb: 'Lobes, deep structures and what each one does.' },
   { id: 'systems', name: 'Systems', scale: '~10 cm', blurb: 'Pathways and chemical systems that link regions.' },
   { id: 'cells', name: 'Cells', scale: '~1 mm', blurb: 'Neurons, glia and the circuits they form.' },
@@ -46,7 +45,7 @@ interface CoreState {
 }
 
 const noSelection: Record<LevelId, string | null> = {
-  head: null, brain: null, systems: null, cells: null, synapse: null, membrane: null,
+  brain: null, systems: null, cells: null, synapse: null, membrane: null,
 };
 
 /** SceneManager installs the real implementation; the store just forwards. */
@@ -55,7 +54,7 @@ export const navigation: { goTo: (level: LevelId, select?: string | null) => voi
 };
 
 export const useCore = create<CoreState>((set, get) => ({
-  level: 'head',
+  level: 'brain',
   pendingLevel: null,
   loading: true,
   loadProgress: 0,

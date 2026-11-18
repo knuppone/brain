@@ -119,7 +119,7 @@ export function Loading() {
       <div className="box">
         <div style={{ color: 'var(--accent)', display: 'grid', placeItems: 'center', marginBottom: 14 }}><BrandMark /></div>
         <h1>Brain Explorer</h1>
-        <p>From skull to synapse, one zoom at a time.</p>
+        <p>From whole brain to ion channel, one zoom at a time.</p>
         <div className="meter"><i style={{ width: `${Math.round(p * 100)}%` }} /></div>
       </div>
     </div>

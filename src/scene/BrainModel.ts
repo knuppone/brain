@@ -30,15 +30,13 @@ export interface BrainView {
   clipPos: number;
   /** see-through outline rendering of the whole brain (Systems level) */
   glass: boolean;
-  /** when false, colours are replaced by a natural tissue tone (Head level) */
-  colored: boolean;
   /** ids that stay lit in glass mode */
   lit: string[];
 }
 
 const DEFAULT_VIEW: BrainView = {
   granularity: 'lobes', selected: null, hovered: null, cortexOpacity: 1, showLeft: true, showRight: true,
-  explode: 0, clipAxis: 'none', clipPos: 0, glass: false, colored: true, lit: [],
+  explode: 0, clipAxis: 'none', clipPos: 0, glass: false, lit: [],
 };
 
 interface Part {
@@ -59,7 +57,6 @@ interface Part {
   targetOffset: THREE.Vector3;
 }
 
-const TISSUE = new THREE.Color('#d39a90');
 const GREY = new THREE.Color('#8b8f9a');
 const DARK = new THREE.Color('#596072');
 const DIM = new THREE.Color('#6d7282');
@@ -304,7 +301,6 @@ export class BrainModel {
       const hemiVisible = p.hemi === 'lh' ? v.showLeft : p.hemi === 'rh' ? v.showRight : true;
       let opacity = hemiVisible ? 1 : 0;
       const base = tmpC.set(s?.color ?? '#cfc7bd');
-      if (!v.colored) base.copy(p.cortex ? TISSUE : base.lerp(TISSUE, 0.55));
       let emissive = 0;
 
       if (p.cortex) {

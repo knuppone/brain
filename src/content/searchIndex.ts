@@ -1,5 +1,4 @@
 import type { LevelId } from '../state/store';
-import { HEAD_LAYERS } from './head';
 import { STRUCTURES } from './regions';
 import { SEARCH_ITEMS as SYSTEMS_ITEMS } from './systems';
 import { SEARCH_ITEMS as CELLS_ITEMS } from './cells';
@@ -17,7 +16,6 @@ const from = (level: LevelId, items: { id: string; name: string; tagline: string
   items.map(({ id, name, tagline }) => ({ level, id, name, tagline }));
 
 export const SEARCH_INDEX: SearchEntry[] = [
-  ...from('head', HEAD_LAYERS),
   ...from('brain', STRUCTURES),
   ...from('systems', SYSTEMS_ITEMS),
   ...from('cells', CELLS_ITEMS),

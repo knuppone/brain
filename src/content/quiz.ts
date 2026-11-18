@@ -9,13 +9,6 @@ export interface QuizQuestion {
 }
 
 export const QUIZ: QuizQuestion[] = [
-  // head
-  { level: 'head', q: 'Which layer lets the brain float, cushioning it against knocks?', options: ['Dura mater', 'Cerebrospinal fluid under the arachnoid', 'The skull\'s spongy core', 'The scalp'], answer: 1,
-    why: 'CSF fills the space under the arachnoid. Floating in it, the 1.4 kg brain effectively weighs about 50 g.' },
-  { level: 'head', q: 'The three meninges, from outside to inside, are…', options: ['Pia, arachnoid, dura', 'Dura, pia, arachnoid', 'Dura, arachnoid, pia', 'Arachnoid, dura, pia'], answer: 2,
-    why: 'Dura ("tough"), arachnoid ("spider-web"), pia ("tender") — the pia clings to the brain surface itself.' },
-  { level: 'head', q: 'Why can surgeons operate on the brain of an awake patient?', options: ['The brain has no pain receptors', 'The skull blocks pain signals', 'CSF is a natural anaesthetic', 'Pain is only felt in the spinal cord'], answer: 0,
-    why: 'Brain tissue itself cannot feel pain. The scalp and dura can, so those are numbed.' },
   // brain
   { level: 'brain', q: 'A person can no longer form new long-term memories. Which structure is most likely damaged?', options: ['Cerebellum', 'Hippocampus', 'Occipital lobe', 'Pons'], answer: 1,
     why: 'The hippocampus turns experiences into lasting memories — as shown by the famous patient H.M.' },

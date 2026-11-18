@@ -548,7 +548,7 @@ export function MembranePanel() {
   const other = MEMBRANE_ITEMS.filter((i) => i.view !== view);
   return (
     <>
-      <Header eyebrow="Level 6 · Membrane" title="A wave of charge, 100 millivolts tall"
+      <Header eyebrow="Level 5 · Membrane" title="A wave of charge, 100 millivolts tall"
         lede="A nerve signal is a brief flip of the voltage across this membrane, made by ion channels opening and closing in strict order. Press Stimulate and watch it in slow motion." />
       <div className="mem-panel-chart"><MembraneChart /><ChartLegend /></div>
       <Section title="The story in six beats"><Beats /></Section>

@@ -346,7 +346,7 @@ export function SynapsePanel() {
 
   return (
     <>
-      <Header eyebrow="Level 5 · Synapse" title="A gap 5,000× thinner than a hair"
+      <Header eyebrow="Level 4 · Synapse" title="A gap 5,000× thinner than a hair"
         lede="Neurons do not touch. To pass a message on, an electrical spike must become a puff of chemicals — and then electricity again. Press Fire a spike and watch it in slow motion." />
       <Section title="What happens, step by step"><Steps /></Section>
       <Section title="Live readout"><LiveBlock /></Section>

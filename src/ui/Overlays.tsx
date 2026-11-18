@@ -70,7 +70,7 @@ function About() {
         </div>
         <div className="modal-body pad">
           <p>
-            One continuous zoom from the head to a single ion channel: six levels, each a thousand or so times smaller
+            One continuous zoom from the whole brain to a single ion channel: five levels, each a thousand or so times smaller
             than the one before. Use the rail on the left, the guided tour, or simply keep scrolling in.
           </p>
           <h3>CONTROLS</h3>
@@ -79,14 +79,14 @@ function About() {
             <b> double-click</b> focus or drill down. Keep scrolling past the zoom limit to dive to the next level.
           </p>
           <p>
-            <kbd>/</kbd> search · <kbd>1</kbd>–<kbd>6</kbd> jump to a level · <kbd>[</kbd> <kbd>]</kbd> previous / next level ·
+            <kbd>/</kbd> search · <kbd>1</kbd>–<kbd>5</kbd> jump to a level · <kbd>[</kbd> <kbd>]</kbd> previous / next level ·
             <kbd>R</kbd> reset view · <kbd>Esc</kbd> deselect
           </p>
           <h3>HOW ACCURATE IS IT?</h3>
           <p>
-            The head and brain are built from real imaging data, not sculpted by hand. The cortex is the FreeSurfer
+            The brain is built from real imaging data, not sculpted by hand. The cortex is the FreeSurfer
             “fsaverage” template coloured by the Desikan–Killiany atlas; deep structures and the cerebellum come from
-            standard MRI atlases; the skull and scalp come from a CT scan, scaled to fit the template brain. The
+            standard MRI atlases. The
             brainstem and hypothalamus are sculpted from published landmarks.
           </p>
           <p>
@@ -98,7 +98,7 @@ function About() {
           <p>
             FreeSurfer fsaverage5 surfaces (Fischl et al.; distributed with nilearn) · Desikan–Killiany labels and
             subcortical surfaces from the ENIGMA Toolbox (BSD-3) · AAL atlas (Tzourio-Mazoyer et al. 2002) via the
-            NiiVue demo images · head CT “CT_Philips” from the niivue-images collection (courtesy of Philips Medical).
+            NiiVue demo images.
             See ATTRIBUTION.md in the repository for details.
           </p>
           <p style={{ color: 'var(--dim)' }}>

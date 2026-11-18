@@ -3,7 +3,6 @@ import { SceneManager } from './scene/SceneManager';
 import { createLevels } from './scene/levels';
 import { LEVELS, levelIndex, useCore } from './state/store';
 import { PANELS } from './ui/panels';
-import { useHead } from './state/headState';
 import { useBrain } from './state/brainState';
 import { DiveHint, HoverTip, Loading, ScaleRail, TopBar } from './ui/Chrome';
 import { Overlays } from './ui/Overlays';
@@ -24,9 +23,9 @@ export function App() {
     const manager = new SceneManager(stageRef.current!, fadeRef.current!);
     managerRef.current = manager;
     createLevels().forEach((l) => manager.register(l));
-    const start = (new URLSearchParams(location.search).get('level') as typeof level) || 'head';
-    void manager.start(LEVELS.some((l) => l.id === start) ? start : 'head');
-    window.__brain = { manager, core: useCore, head: useHead, brain: useBrain };
+    const start = (new URLSearchParams(location.search).get('level') as typeof level) || 'brain';
+    void manager.start(LEVELS.some((l) => l.id === start) ? start : 'brain');
+    window.__brain = { manager, core: useCore, brain: useBrain };
     return () => manager.dispose();
   }, []);
 
@@ -43,7 +42,7 @@ export function App() {
       else if (e.key === ']' || e.key === '[') {
         const i = levelIndex(s.level) + (e.key === ']' ? 1 : -1);
         if (LEVELS[i]) s.goTo(LEVELS[i].id);
-      } else if (/^[1-6]$/.test(e.key)) s.goTo(LEVELS[+e.key - 1].id);
+      } else if (/^[1-5]$/.test(e.key)) s.goTo(LEVELS[+e.key - 1].id);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -45,8 +45,14 @@ export function BrainPanel() {
   const groups = ['Diencephalon', 'Limbic system', 'Basal ganglia', 'Hindbrain', 'Brainstem', 'White matter', 'Fluid spaces'];
   return (
     <>
-      <Header eyebrow="Level 2 · Brain" title="One organ, many specialists"
+      <Header eyebrow="Level 1 · Brain" title="One organ, many specialists"
         lede="About 1.4 kg and 86 billion neurons. Different regions do different jobs — click any part to meet it." />
+      <Section title="How it is protected">
+        <Callout label="Before you start">
+          The brain is as soft as tofu. It sits inside the skull, wrapped in three membranes (dura, arachnoid, pia) and
+          floating in cerebrospinal fluid, which makes its 1.4 kg feel like 50 g.
+        </Callout>
+      </Section>
       <Section title="Cerebral cortex — the folded outer sheet">
         <div className="list">
           {LOBES.map((l) => <Row key={l.id} title={l.name} sub={l.tagline} color={l.color} onClick={() => pick(l.id)} />)}

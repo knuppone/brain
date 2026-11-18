@@ -9,15 +9,10 @@ available neuroimaging data. Nothing was sculpted by hand except where noted.
 | Cortical regions | **Desikan–Killiany** atlas (Desikan et al., 2006) labels on fsaverage5, from the [ENIGMA Toolbox](https://github.com/MICA-MNI/ENIGMA) | BSD-3 |
 | Deep structures (`subcortical.glb`) | Subcortical surfaces from the ENIGMA Toolbox (thalamus, caudate, putamen, pallidum, accumbens, amygdala, hippocampus, lateral ventricles) | BSD-3 |
 | Cerebellum (`cerebellum.glb`) | **AAL** atlas (Tzourio-Mazoyer et al., 2002), from the [NiiVue](https://github.com/niivue/niivue) demo images | AAL is free for research/education use; NiiVue is BSD-2 |
-| Skull, scalp (`skull.glb`, `scalp.glb`) | Head CT `CT_Philips` from [niivue-images](https://github.com/neurolabusc/niivue-images), "courtesy of Philips Medical" | Sample dataset distributed for evaluating viewers; if you redistribute this app commercially, confirm the terms or swap in another CT |
-| Meninges (`meninges.glb`) | Computed: offset shells around the template brain | — |
 | Brainstem (`brainstem.glb`), hypothalamus | Sculpted procedurally from published MNI landmarks (no open surface was available) | — |
 
 Notes on fidelity:
 
-- The CT skull belongs to a different person than the average-template brain. It is scaled and
-  rotated so the cranial cavity fits the brain, and the inner table is nudged outward by up to
-  7 mm where the two would otherwise touch.
 - fsaverage is an *average* of 40 brains, so its folds are smoother than any individual's.
 - Region borders follow the atlas at ~2 mm resolution.
 

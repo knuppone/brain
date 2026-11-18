@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Download the open datasets the mesh pipeline needs into <dir> (default: ./.sources).
 # Then run:  python3 scripts/build_models.py <dir> public/models
-# Python deps: nibabel numpy scipy scikit-image trimesh fast-simplification shapely mapbox-earcut
+# Python deps: nibabel numpy scipy scikit-image trimesh fast-simplification
 set -euo pipefail
 DIR="${1:-.sources}"
 mkdir -p "$DIR/fsaverage5"
@@ -22,6 +22,4 @@ get $E/surfaces/sctx_lh.gii "$DIR/sctx_lh.gii"
 get $E/surfaces/sctx_rh.gii "$DIR/sctx_rh.gii"
 # AAL atlas (cerebellum) from the NiiVue demo images
 get $RAW/niivue/niivue/main/packages/niivue/demos/images/aal.nii.gz "$DIR/aal.nii.gz"
-# Head CT (skull + scalp) from niivue-images
-get $RAW/neurolabusc/niivue-images/main/CT_Philips.nii.gz "$DIR/CT_Philips.nii.gz"
 echo "sources ready in $DIR"

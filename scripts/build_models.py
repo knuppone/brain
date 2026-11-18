@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build the anatomical meshes used by Brain Explorer.
+"""Build the brain meshes used by Brain Explorer.
 
 Inputs (downloaded by scripts/fetch_sources.sh into a source directory):
   - fsaverage5 pial surfaces + sulcal depth (FreeSurfer, bundled with nilearn)
   - Desikan-Killiany labels on fsaverage5 + subcortical surfaces (ENIGMA Toolbox)
   - AAL atlas volume (niivue demo images)
-  - CT_Philips head CT (niivue-images)
 
 Output: public/models/*.glb in "scene space": centimetres, +X = subject's left,
 +Y = up, +Z = front (so a camera on +Z looks at the face).
@@ -265,166 +264,6 @@ def build_brainstem():
     return centroids
 
 
-# ------------------------------------------------------- scalp and skull
-def brain_points_mm():
-    fs = SRC / "fsaverage5"
-    pts = [nib.load(fs / f"pial_{s}.gii.gz").darrays[0].data for s in ("left", "right")]
-    img = nib.load(SRC / "aal.nii.gz")
-    d = np.asarray(img.dataobj)
-    cb = np.argwhere(d >= 91)[::7]
-    pts.append(nib.affines.apply_affine(img.affine, cb))
-    return np.concatenate(pts).astype(np.float64)
-
-
-def build_head():
-    print("skull (CT) -> template space")
-    ct = nib.load(SRC / "CT_Philips.nii.gz")
-    hu = ct.get_fdata().astype(np.float32)
-    z = 0.6
-    hu = ndi.zoom(hu, z, order=1)
-    caff = ct.affine @ np.diag([1 / z, 1 / z, 1 / z, 1])
-    bone = ndi.gaussian_filter(hu, 0.6) > 260
-    # intracranial cavity: non-bone voxels that see bone to the left, right, front,
-    # back and above (the skull vault encloses them); keep the largest such pocket.
-    closed = ndi.binary_closing(bone, iterations=2)
-
-    def seen(axis, reverse):
-        b = np.flip(closed, axis) if reverse else closed
-        acc = np.maximum.accumulate(b, axis=axis)
-        return np.flip(acc, axis) if reverse else acc
-
-    # orientation of the CT voxel grid relative to RAS
-    sgn = np.sign(np.diag(caff)[:3])
-    enclosed = ~closed
-    for axis in (0, 1):
-        enclosed &= seen(axis, False) & seen(axis, True)
-    enclosed &= seen(2, sgn[2] > 0)  # bone somewhere above
-    core = ndi.binary_erosion(enclosed, iterations=4)
-    lab, n = ndi.label(core)
-    sizes = np.bincount(lab.ravel())
-    sizes[0] = 0
-    cav = lab == np.argmax(sizes)
-    cav = ndi.binary_dilation(cav, iterations=5) & enclosed
-    cav = ndi.binary_opening(cav, iterations=2)
-    cidx = np.argwhere(cav)
-    cav_mm = nib.affines.apply_affine(caff, cidx)
-    print("   cavity volume (ml):", round(len(cidx) * abs(np.linalg.det(caff[:3, :3])) / 1000))
-
-    brain = brain_points_mm()
-    # Fit skull -> template with per-axis scale + translation (+ pitch search) so the
-    # cranial cavity hugs the brain.
-    def bbox(p):
-        return np.percentile(p, 0.3, axis=0), np.percentile(p, 99.7, axis=0)
-
-    b0, b1 = bbox(brain)
-    margin = 1.035
-    best_fit = None
-    for pitch in np.deg2rad(np.arange(-24, 25, 2.0)):
-        c, s_ = np.cos(pitch), np.sin(pitch)
-        R = np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]])
-        p = cav_mm @ R.T
-        c0, c1 = bbox(p)
-        scale = (b1 - b0) * margin / (c1 - c0)
-        trans = (b0 + b1) / 2 - scale * (c0 + c1) / 2
-        A = np.eye(4)
-        A[:3, :3] = np.diag(scale) @ R
-        A[:3, 3] = trans
-        # score: brain points that fall outside the cavity after mapping back
-        inv = np.linalg.inv(A @ caff)
-        ijk = np.round(nib.affines.apply_affine(inv, brain)).astype(int)
-        ok = np.all((ijk >= 0) & (ijk < np.array(cav.shape)), axis=1)
-        inside = np.zeros(len(brain), bool)
-        inside[ok] = cav[ijk[ok, 0], ijk[ok, 1], ijk[ok, 2]]
-        aniso = scale.max() / scale.min()
-        score = (1 - inside.mean()) + 0.15 * (aniso - 1)
-        if best_fit is None or score < best_fit[0]:
-            best_fit = (score, np.rad2deg(pitch), scale, A, inside.mean())
-    score, pitch, scale, A, frac = best_fit
-    print(f"   fit: pitch {pitch:.0f} deg, scale {scale.round(3)}, brain inside cavity {frac:.3f}")
-
-    def cut_neck(v_mm, f, floor_mm, cap):
-        m = trimesh.Trimesh(v_mm, f, process=True)
-        m = m.slice_plane([0, 0, floor_mm], [0, 0, 1], cap=cap)
-        return m
-
-    # Brain hull in template space (2 mm grid): the meninges wrap this, and the skull is
-    # nudged outward wherever the (differently shaped) CT skull would touch it.
-    g_aff = np.array([[2, 0, 0, -96], [0, 2, 0, -136], [0, 0, 2, -84], [0, 0, 0, 1.0]])
-    g_shape = (96, 122, 96)
-    ijk = np.round(nib.affines.apply_affine(np.linalg.inv(g_aff), brain)).astype(int)
-    hull = np.zeros(g_shape, bool)
-    hull[ijk[:, 0], ijk[:, 1], ijk[:, 2]] = True
-    hull = ndi.binary_dilation(hull, iterations=2)
-    hull = ndi.binary_closing(np.pad(hull, 12), iterations=5)[12:-12, 12:-12, 12:-12]
-    hull = ndi.binary_fill_holes(hull)
-    hull = ndi.binary_erosion(hull, iterations=1)
-    sd = (ndi.distance_transform_edt(~hull) - ndi.distance_transform_edt(hull)) * 2.0  # mm, + outside
-    sd = ndi.gaussian_filter(sd, 1.0)
-    grad = np.stack(np.gradient(sd, 2.0), axis=0)
-
-    def clear_of_brain(v_mm, clearance):
-        """push vertices out of the hull until they are `clearance` mm away"""
-        v = v_mm.copy()
-        inv = np.linalg.inv(g_aff)
-        moved = 0
-        for _ in range(4):
-            c = nib.affines.apply_affine(inv, v).T
-            d = ndi.map_coordinates(sd, c, order=1, mode="nearest")
-            need = np.clip(clearance - d, 0, 7.0)
-            if _ == 0:
-                moved = (need > 0).mean(), need.max()
-            gv = np.stack([ndi.map_coordinates(grad[i], c, order=1, mode="nearest") for i in range(3)], axis=1)
-            gv /= np.linalg.norm(gv, axis=1, keepdims=True) + 1e-9
-            v += gv * need[:, None]
-        return v, moved
-
-    # skull: bone surface, mapped into template space, neck vertebrae cut away
-    lab, n = ndi.label(bone)
-    sizes = np.bincount(lab.ravel())
-    sizes[0] = 0
-    sk = np.isin(lab, np.where(sizes > 0.004 * sizes.max())[0])
-    field = ndi.gaussian_filter(np.where(sk, hu, np.minimum(hu, 0)).astype(np.float32), 0.7)
-    v_ct, f = volume_surface(field, A @ caff, 200, sigma=0, target=120000, smooth=6)
-    m = cut_neck(v_ct, f, -118.0, cap=False)
-    parts = [p for p in m.split(only_watertight=False) if len(p.faces) > 300]
-    m = trimesh.util.concatenate(parts)
-    v_fixed, moved = clear_of_brain(np.asarray(m.vertices), 4.6)
-    print(f"   skull vertices nudged: {moved[0]:.3f}, max {moved[1]:.1f} mm")
-    m = trimesh.Trimesh(taubin(v_fixed, np.asarray(m.faces), 2), np.asarray(m.faces), process=False)
-    verts, faces = to_scene(m.vertices), np.asarray(m.faces)
-    skull = mesh(verts, faces, "skull", smooth_normals(verts, faces))
-    print("   skull faces", len(faces), "bbox", verts.min(0).round(1), verts.max(0).round(1))
-
-    # scalp: skin surface from the same CT (table / head rest removed by opening)
-    head = ndi.gaussian_filter(hu, 1.0) > -350
-    head = ndi.binary_opening(head, iterations=4)
-    lab, n = ndi.label(head)
-    sizes = np.bincount(lab.ravel())
-    sizes[0] = 0
-    head = lab == np.argmax(sizes)
-    head = ndi.binary_dilation(head, iterations=1)
-    for k in range(head.shape[2]):
-        head[:, :, k] = ndi.binary_fill_holes(head[:, :, k])
-    head = np.pad(head, 2)
-    paff = A @ caff @ np.array([[1, 0, 0, -2], [0, 1, 0, -2], [0, 0, 1, -2], [0, 0, 0, 1.0]])
-    v_h, f_h = volume_surface(head, paff, 0.5, sigma=1.3, target=60000, smooth=10)
-    m = cut_neck(v_h, f_h, -124.0, cap=True)
-    m = max(m.split(only_watertight=False), key=lambda p: len(p.faces))
-    verts, faces = to_scene(m.vertices), np.asarray(m.faces)
-    scalp = mesh(verts, faces, "scalp", smooth_normals(verts, faces))
-    print("   scalp faces", len(faces), "bbox", verts.min(0).round(1), verts.max(0).round(1))
-
-    # meninges: dura hugs the inside of the skull, the arachnoid sits just beneath it,
-    # and the CSF-filled space lies between arachnoid and brain.
-    shells = []
-    for name, off, tgt in [("dura", 3.6, 16000), ("arachnoid", 2.2, 16000)]:
-        v_s, f_s = volume_surface(sd, g_aff, off, sigma=0, target=tgt, smooth=8)
-        sv = to_scene(v_s)
-        shells.append(mesh(sv, f_s, name, smooth_normals(sv, f_s)))
-    export([scalp], "scalp.glb")
-    export([skull], "skull.glb")
-    export(shells, "meninges.glb")
-
 
 if __name__ == "__main__":
     only = set(sys.argv[3:])
@@ -434,7 +273,7 @@ if __name__ == "__main__":
         cents = json.loads(meta_path.read_text())
     steps = {
         "cortex": build_cortex, "subcortical": build_subcortical, "cerebellum": build_cerebellum,
-        "brainstem": build_brainstem, "head": build_head,
+        "brainstem": build_brainstem,
     }
     for name, fn in steps.items():
         if only and name not in only:

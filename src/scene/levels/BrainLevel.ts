@@ -68,7 +68,7 @@ export class BrainLevel extends Level {
     this.brain.setView({
       granularity, selected, hovered: this.hovered, cortexOpacity: b.cortexOpacity, showLeft: b.showLeft,
       showRight: b.showRight, explode: b.explode, clipAxis: b.clipAxis, clipPos: b.clipPos, glass: false,
-      colored: true, lit: [],
+      lit: [],
     });
   }
 

@@ -152,7 +152,7 @@ export function CellsPanel() {
 
   return (
     <>
-      <Header eyebrow="Level 4 · Cells" title={OVERVIEW.title} lede={OVERVIEW.lede} />
+      <Header eyebrow="Level 3 · Cells" title={OVERVIEW.title} lede={OVERVIEW.lede} />
       <CircuitSection />
       {CELL_GROUPS.map((g) => (
         <Section key={g.id} title={g.title}>

@@ -1,6 +1,5 @@
 import type { LevelId } from '../state/store';
 import { useCore } from '../state/store';
-import { useHead } from '../state/headState';
 import { useBrain } from '../state/brainState';
 import { useSystems } from '../state/systemsState';
 import { useCells } from '../state/cellsState';
@@ -22,25 +21,8 @@ const brainDefaults = { granularity: 'lobes' as const, cortexOpacity: 1, showLef
 
 export const TOUR: TourStep[] = [
   {
-    level: 'head', title: 'Start outside',
-    text: 'Your brain is soft — about as firm as tofu — so it travels in armour: skin, bone, three membranes and a moat of fluid.',
-    try: 'Drag to turn the head. The cutaway shows each layer as a step.',
-    apply: () => { useHead.getState().set({ peel: 0, cutaway: true }); sel('head', null); },
-  },
-  {
-    level: 'head', title: 'Through the skull',
-    text: 'Under the scalp, the skull is a sandwich of hard bone around a spongy core. Beneath it the leathery dura mater lines the bone.',
-    try: 'Slide "Peel layers" yourself to take them off one at a time.',
-    apply: () => { useHead.getState().set({ peel: 2, cutaway: false }); sel('head', 'dura'); },
-  },
-  {
-    level: 'head', title: 'The brain, afloat',
-    text: 'Clear cerebrospinal fluid lets the 1.4 kg brain float as if it weighed 50 g. With the last membrane gone, the folded cortex appears.',
-    apply: () => { useHead.getState().set({ peel: 4, cutaway: false }); sel('head', 'pia'); },
-  },
-  {
     level: 'brain', title: 'A map of specialists',
-    text: 'The wrinkled outer sheet is the cerebral cortex. Its lobes have different jobs: planning and movement in front, touch on top, hearing at the sides, vision at the back.',
+    text: 'Your brain is soft — about as firm as tofu — and floats in clear fluid inside the skull, wrapped in three membranes. The wrinkled outer sheet is the cerebral cortex. Its lobes have different jobs: planning and movement in front, touch on top, hearing at the sides, vision at the back.',
     try: 'Click any lobe. Double-click to drill down into its areas.',
     apply: () => { useBrain.getState().set(brainDefaults); sel('brain', null); },
   },
@@ -57,7 +39,7 @@ export const TOUR: TourStep[] = [
   },
   {
     level: 'systems', title: 'Regions are wired together',
-    text: 'No region works alone. Here the brain turns to glass so you can follow a signal: light enters the eyes, crosses to the thalamus, and only becomes sight at the very back of the head.',
+    text: 'No region works alone. Here the brain turns to glass so you can follow a signal: light enters the eyes, crosses to the thalamus, and only becomes sight at the very back of the brain.',
     try: 'Press "Play steps" to walk the route station by station.',
     apply: () => { useSystems.getState().set({ mode: 'pathways', showAll: false, step: 0 }); sel('systems', 'vision'); },
   },
