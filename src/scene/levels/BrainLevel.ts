@@ -79,6 +79,8 @@ export class BrainLevel extends Level {
       if (!id) { b.set({ showLeft: true }); this.autoHid = null; }
     }
     if (!id || this.clickSelected) {
+      // deselected from the panel (Back, Esc): return to the overview framing
+      if (!id && !this.clickSelected) void this.ctx.flyTo(this.home.position, this.home.target, 0.9);
       this.clickSelected = false;
       return;
     }
