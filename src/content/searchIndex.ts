@@ -3,6 +3,8 @@ import { HEAD_LAYERS } from './head';
 import { STRUCTURES } from './regions';
 import { SEARCH_ITEMS as SYSTEMS_ITEMS } from './systems';
 import { SEARCH_ITEMS as CELLS_ITEMS } from './cells';
+import { SEARCH_ITEMS as SYNAPSE_ITEMS } from './synapse';
+import { SEARCH_ITEMS as MEMBRANE_ITEMS } from './membrane';
 
 export interface SearchEntry {
   level: LevelId;
@@ -19,6 +21,8 @@ export const SEARCH_INDEX: SearchEntry[] = [
   ...from('brain', STRUCTURES),
   ...from('systems', SYSTEMS_ITEMS),
   ...from('cells', CELLS_ITEMS),
+  ...from('synapse', SYNAPSE_ITEMS),
+  ...from('membrane', MEMBRANE_ITEMS),
 ];
 
 export function search(query: string, limit = 12): SearchEntry[] {

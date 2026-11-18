@@ -136,6 +136,7 @@ export class SceneManager {
     }
     this.active = level;
     this.scene.add(level.root);
+    this.resize();
     this.controls.minDistance = level.home.minDistance;
     this.controls.maxDistance = level.home.maxDistance;
     const d = level.home.position.distanceTo(level.home.target);
@@ -311,6 +312,12 @@ export class SceneManager {
     const freeH = h - inset.top - inset.bottom;
     const dx = (inset.left - inset.right) / 2;
     const dy = (inset.top - inset.bottom) / 2;
+    if (this.active?.manualFraming) {
+      this.camera.clearViewOffset();
+      this.camera.fov = w / h < 0.8 ? 46 : 32;
+      this.camera.updateProjectionMatrix();
+      return;
+    }
     this.camera.setViewOffset(w, h, -dx, -dy, w, h);
     // widen the field of view when the free area is small or narrow so the home framing still fits
     const fit = Math.min(freeW / 820, freeH / 640, 1);

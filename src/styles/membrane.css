@@ -1,0 +1,100 @@
+/* Membrane level ("Action Potential Lab") — dock, banner, chart and 3D label styles */
+
+.mem-dock { width: 860px; max-width: 100%; display: grid; gap: 8px; }
+.mem-chart { height: 204px; }
+.mem-chart.axon { height: 170px; }
+.mem-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 7px 14px; }
+.mem-controls .ctl input[type='range'] { width: 96px; }
+.mem-controls .ctl > span.v { min-width: 5.2em; }
+.mem-group { display: inline-flex; align-items: center; gap: 8px; }
+.btn.mem-stim { height: 34px; padding: 0 16px; font-size: 13.5px; }
+.btn.mem-stim svg { margin-right: 1px; }
+.toggle.mem-ttx.on .sw { background: #4fd67a; }
+.toggle.mem-tea.on .sw { background: #ff8ad8; }
+.mem-panel-chart { display: none; margin-top: 14px; }
+
+/* banner: big voltage read-out + what is happening now */
+.mem-banner {
+  position: absolute; left: calc(var(--rail-w) + 40px); right: calc(var(--panel-w) + 66px); top: calc(var(--top-h) + 6px);
+  z-index: 3; display: flex; justify-content: center; pointer-events: none; transition: right 0.3s ease;
+}
+.app.panel-closed .mem-banner { right: 60px; }
+.mem-banner-inner {
+  display: flex; align-items: center; gap: 16px; padding: 9px 16px 9px 14px; border-radius: 14px; max-width: min(100%, 740px);
+  background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px);
+}
+.mem-volt { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 34px; line-height: 1; letter-spacing: -0.02em; min-width: 3.9em; text-align: right; white-space: nowrap; }
+.mem-volt small { font-size: 14px; font-weight: 600; color: var(--dim); margin-left: 4px; letter-spacing: 0; }
+.mem-volt .sub { display: block; font-size: 10.5px; font-weight: 600; color: var(--faint); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
+.mem-now { min-width: 0; border-left: 1px solid var(--line); padding-left: 16px; }
+.mem-now .ph { font-size: 16px; font-weight: 680; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mem-now .ph i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.mem-now .why { color: #d5dbe8; font-size: 13px; margin-top: 1px; text-wrap: pretty; }
+.mem-now .meta { color: var(--faint); font-size: 11.5px; margin-top: 3px; }
+.mem-pops { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 5px; font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.mem-pops .pop { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.mem-pops .dots { display: inline-flex; gap: 3px; }
+.mem-pops .dots i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--faint); box-sizing: border-box; transition: background 0.1s; }
+.mem-pops .dots i.open.na { background: #ffb02e; border-color: #ffb02e; box-shadow: 0 0 6px #ffb02e; }
+.mem-pops .dots i.open.k { background: #45d4ff; border-color: #45d4ff; box-shadow: 0 0 6px #45d4ff; }
+.mem-pops .dots i.inact { background: #ff4d6d; border-color: #ff4d6d; }
+.mem-pops .dots i.blocked { background: #5a5f6e; border-color: #5a5f6e; }
+.mem-badge {
+  font-size: 11px; font-weight: 650; letter-spacing: 0.04em; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--line-strong); color: var(--text);
+}
+.mem-badge.spike { background: rgba(95, 214, 160, 0.16); border-color: var(--good); color: var(--good); }
+.mem-badge.sub, .mem-badge.refractory, .mem-badge.blocked { background: rgba(255, 122, 138, 0.12); border-color: var(--warn); color: var(--warn); }
+.mem-badge.ttx { border-color: #4fd67a; color: #7dff9b; }
+.mem-badge.tea { border-color: #ff8ad8; color: #ff8ad8; }
+.mem-badge.fade { animation: mem-fade 3.2s ease forwards; }
+@keyframes mem-fade { 0% { opacity: 0; transform: scale(0.9); } 8% { opacity: 1; transform: scale(1.06); } 14% { transform: scale(1); } 80% { opacity: 1; } 100% { opacity: 0; } }
+.mem-speeds { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; font-size: 12.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.mem-speeds b { color: var(--text); font-weight: 650; }
+.mem-speeds .x { color: var(--accent); font-weight: 650; }
+
+/* six beats */
+.beats { display: grid; gap: 3px; }
+.beat {
+  display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; padding: 7px 9px; border-radius: 10px;
+  border: 1px solid transparent; transition: background 0.2s, border-color 0.2s;
+}
+.beat .num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #10131c; margin-top: 1px; }
+.beat b { display: block; font-size: 13.5px; font-weight: 620; line-height: 1.3; }
+.beat small { display: block; color: var(--dim); font-size: 12.5px; line-height: 1.38; }
+.beat.on { background: rgba(255, 255, 255, 0.07); border-color: var(--line-strong); }
+.beat.on small { color: #d5dbe8; }
+.ideas { display: grid; gap: 9px; }
+.ideas p { color: #d5dbe8; font-size: 13.5px; }
+.ideas p b { color: var(--text); }
+.mem-note { color: var(--dim); font-size: 12.5px; margin-top: 10px; text-wrap: pretty; }
+.mem-close { color: #d5dbe8; font-size: 14px; margin-top: 20px; text-wrap: pretty; }
+.mem-try { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+/* 3D labels. CSS2DRenderer gives every label its own z-index; keep those inside the label layer so labels never paint over the panels. */
+.label-layer { isolation: isolate; }
+.tag.mem-name { font-weight: 600; }
+.tag.mem-region { background: rgba(9, 12, 22, 0.5); border: 0; backdrop-filter: none; color: var(--dim); font-size: 10.5px; letter-spacing: 0.1em; font-weight: 650; }
+.tag.mem-atp { color: #fff29a; border-color: rgba(255, 242, 154, 0.4); }
+.tag.mem-state { font-size: 10px; padding: 0 6px; letter-spacing: 0.03em; color: var(--faint); border-color: transparent; background: rgba(9, 12, 22, 0.55); }
+.tag.mem-state[data-state='open'] { color: #10131c; background: #fff; border-color: #fff; font-weight: 700; }
+.tag.mem-state[data-state='inactivated'] { color: #ff8fa3; border-color: rgba(255, 77, 109, 0.45); }
+.tag.mem-state[data-state='blocked'] { color: #b8bfd0; border-color: var(--line-strong); text-decoration: line-through; }
+
+@media (max-width: 860px) {
+  .mem-dock { gap: 0; }
+  .mem-dock .mem-chart { display: none; }
+  .mem-opt { display: none !important; }
+  .mem-panel-chart { display: block; }
+  .mem-panel-chart .mem-chart { display: block; height: 150px; }
+  .mem-banner { left: 8px; right: 8px; top: calc(var(--top-h) + 40px); }
+  .app.panel-closed .mem-banner { right: 8px; }
+  .mem-banner-inner { padding: 6px 10px; gap: 10px; }
+  .mem-volt { font-size: 24px; min-width: 3.6em; }
+  .mem-volt .sub { display: none; }
+  .mem-now { padding-left: 10px; }
+  .mem-now .ph { font-size: 14px; }
+  .mem-now .why { display: none; }
+  .mem-now .meta, .mem-pops, .mem-speeds { display: none; }
+  .tag.mem-state { display: none !important; }
+}

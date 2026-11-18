@@ -74,6 +74,7 @@ function frameBox(center: THREE.Vector3, halfW: number, halfH: number, dir: THRE
 }
 
 export class CellsLevel extends Level {
+  readonly manualFraming = true;
   readonly id = 'cells' as const;
   /** one world unit is 10 µm */
   readonly metersPerUnit = 1e-5;

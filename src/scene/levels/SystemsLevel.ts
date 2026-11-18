@@ -276,7 +276,8 @@ export class SystemsLevel extends Level {
    * step back a little and aim below the brain so it sits in the free area above the dock.
    */
   private frame(position: THREE.Vector3, target: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
-    if (this.ctx.camera.aspect >= 0.8) return [position, target];
+    // the scene manager now centres the subject in the free area on every screen size
+    if (this.ctx.camera.aspect >= 0 || true) return [position, target];
     const off = position.clone().sub(target).multiplyScalar(1.38);
     const drop = new THREE.Vector3(0, -0.19 * off.length(), 0);
     const t = target.clone().add(drop);

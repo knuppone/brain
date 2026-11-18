@@ -31,6 +31,9 @@ export abstract class Level {
   abstract readonly metersPerUnit: number;
   abstract readonly home: CameraHome;
 
+  /** true when the level frames its subject around the UI itself (no automatic view centring) */
+  readonly manualFraming: boolean = false;
+
   readonly root = new THREE.Group();
   protected ctx!: LevelContext;
   private loaded: Promise<void> | null = null;
