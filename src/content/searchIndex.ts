@@ -2,6 +2,7 @@ import type { LevelId } from '../state/store';
 import { HEAD_LAYERS } from './head';
 import { STRUCTURES } from './regions';
 import { SEARCH_ITEMS as SYSTEMS_ITEMS } from './systems';
+import { SEARCH_ITEMS as CELLS_ITEMS } from './cells';
 
 export interface SearchEntry {
   level: LevelId;
@@ -17,6 +18,7 @@ export const SEARCH_INDEX: SearchEntry[] = [
   ...from('head', HEAD_LAYERS),
   ...from('brain', STRUCTURES),
   ...from('systems', SYSTEMS_ITEMS),
+  ...from('cells', CELLS_ITEMS),
 ];
 
 export function search(query: string, limit = 12): SearchEntry[] {
