@@ -126,6 +126,12 @@ export class SceneManager {
   private activate(level: Level) {
     if (this.active) {
       this.active.exit();
+      // CSS2D labels are only repositioned while their object is in the scene: hide the
+      // outgoing level's labels or they would stay frozen on screen
+      this.active.root.traverse((o) => {
+        const el = (o as unknown as { isCSS2DObject?: boolean; element?: HTMLElement });
+        if (el.isCSS2DObject && el.element) el.element.style.display = 'none';
+      });
       this.scene.remove(this.active.root);
     }
     this.active = level;

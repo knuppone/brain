@@ -1,6 +1,7 @@
 import type { LevelId } from '../state/store';
 import { HEAD_LAYERS } from './head';
 import { STRUCTURES } from './regions';
+import { SEARCH_ITEMS as SYSTEMS_ITEMS } from './systems';
 
 export interface SearchEntry {
   level: LevelId;
@@ -15,6 +16,7 @@ const from = (level: LevelId, items: { id: string; name: string; tagline: string
 export const SEARCH_INDEX: SearchEntry[] = [
   ...from('head', HEAD_LAYERS),
   ...from('brain', STRUCTURES),
+  ...from('systems', SYSTEMS_ITEMS),
 ];
 
 export function search(query: string, limit = 12): SearchEntry[] {
