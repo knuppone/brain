@@ -235,6 +235,10 @@ export function tractMaterial(color: THREE.Color, thick: boolean) {
       uSpacing: { value: thick ? 3.2 : 7 },
       uBase: { value: thick ? 0.5 : 0.3 },
       uSharp: { value: thick ? 5 : 9 },
+      /** 1 on the light stage: draw as translucent ink instead of added light */
+      uLight: { value: 0 },
+      /** ink weight of a resting fibre on the light stage */
+      uInk: { value: thick ? 0.8 : 0.5 },
     },
     vertexShader: /* glsl */ `
       attribute float aU; attribute vec3 aInfo;
@@ -246,7 +250,7 @@ export function tractMaterial(color: THREE.Color, thick: boolean) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uColor; uniform float uOpacity, uFlow, uStep, uSpacing, uBase, uSharp, uTrunk;
+      uniform vec3 uColor; uniform float uOpacity, uFlow, uStep, uSpacing, uBase, uSharp, uTrunk, uLight, uInk;
       varying float vU; varying vec3 vInfo; varying vec3 vN; varying vec3 vV;
       void main(){
         float ph = fract((vU - uFlow) / uSpacing + vInfo.y);
@@ -261,6 +265,15 @@ export function tractMaterial(color: THREE.Color, thick: boolean) {
         float core = 0.4 + 0.6 * pow(abs(dot(normalize(vN), normalize(vV))), 1.4);
         // many fibres share the first centimetres: dim them there so the trunk does not burn out
         float trunk = mix(uTrunk, 1.0, smoothstep(0.5, 5.0, vU));
+        if (uLight > 0.5) {
+          // ink on paper: a saturated line whose weight sits in alpha, with a darker, denser band for the pulse
+          float sfl = max(sf, 0.16);
+          float p = pulse * pf;
+          float a = ((uInk + tip * 0.2) * min(sfl, 1.0) + p * 0.55) * mix(0.72, 1.0, core) * mix(mix(uTrunk, 1.0, 0.55), 1.0, smoothstep(0.5, 5.0, vU));
+          vec3 inkCol = mix(uColor, uColor * 0.38, clamp(p * 1.15 + (sf > 1.1 ? 0.12 : 0.0), 0.0, 1.0));
+          gl_FragColor = vec4(inkCol, clamp(a, 0.0, 1.0) * uOpacity);
+          return;
+        }
         float glow = ((uBase + tip * 0.35) * sf + pulse * pf * sf * 1.5) * trunk;
         vec3 col = uColor * glow + vec3(1.0, 0.97, 0.92) * pulse * pf * sf * 0.4 * trunk;
         gl_FragColor = vec4(col * core * uOpacity, 1.0);
@@ -291,7 +304,7 @@ export function haloTexture(): THREE.Texture {
 export function orbMaterial(color: THREE.Color) {
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: false, ...ADDITIVE,
-    uniforms: { uColor: { value: color.clone() }, uOpacity: { value: 0 } },
+    uniforms: { uColor: { value: color.clone() }, uOpacity: { value: 0 }, uLight: { value: 0 } },
     vertexShader: /* glsl */ `
       varying vec3 vN; varying vec3 vV;
       void main(){
@@ -300,10 +313,11 @@ export function orbMaterial(color: THREE.Color) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform vec3 uColor; uniform float uOpacity; varying vec3 vN; varying vec3 vV;
+      uniform vec3 uColor; uniform float uOpacity, uLight; varying vec3 vN; varying vec3 vV;
       void main(){
         float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.0);
-        gl_FragColor = vec4(uColor * (0.06 + f * 0.7) * uOpacity, 1.0);
+        if (uLight > 0.5) gl_FragColor = vec4(uColor, min(1.0, 0.1 + f * 0.75) * uOpacity);
+        else gl_FragColor = vec4(uColor * (0.06 + f * 0.7) * uOpacity, 1.0);
       }`,
   });
 }

@@ -17,7 +17,7 @@ function Detail({ s }: { s: BrainSystem }) {
   const set = useSystems((x) => x.set);
   const style = { '--sys': s.color } as CSSProperties;
   return (
-    <div style={style}>
+    <div className="sys-detail" style={style}>
       <Header eyebrow={s.eyebrow} color={s.color} title={s.name} lede={s.lede}
         onBack={() => select('systems', null)} backLabel={s.kind === 'chemical' ? 'All chemical systems' : 'All pathways'} />
       <Section title="What it does"><Bullets items={s.does} /></Section>

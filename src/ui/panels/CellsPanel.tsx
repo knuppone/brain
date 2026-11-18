@@ -5,14 +5,23 @@ import {
   CELL_GROUPS, CELL_TYPES, cellTypeById, CIRCUIT_TEXT, OVERVIEW, PART_COLORS, SIGNAL_COLORS, TRACE_CELLS,
 } from '../../content/cells';
 import { Bullets, Callout, DiveCTA, Divider, Header, Row, Section, Segmented, Toggle } from '../kit';
+import { useTheme } from '../../state/theme';
+import { token } from '../../scene/theme3d';
 import '../../styles/cells.css';
+
+/** trace colours are picked for the dark chart; these are the same hues, dark enough for the pale one */
+const TRACE_INK: Record<string, string> = { S1: '#c9481f', A3: '#a86a00', B1: '#7a5a2a', K1: '#0b78b8' };
 
 const EFFECT_LABEL = { excitatory: 'excites', inhibitory: 'inhibits', modulatory: 'modulates' } as const;
 
 /** scrolling membrane-potential traces, in step with the 3D circuit */
 function CircuitChart() {
   const ref = useRef<HTMLCanvasElement>(null);
+  const theme = useTheme((s) => s.theme);
   useEffect(() => {
+    const light = theme === 'light';
+    const dim = token('--dim', '#9ba6bd');
+    const grid = `rgb(${token('--fg-rgb', '255 255 255')} / 0.07)`;
     const canvas = ref.current!;
     const g = canvas.getContext('2d')!;
     let raf = 0;
@@ -36,9 +45,9 @@ function CircuitChart() {
       g.textBaseline = 'middle';
 
       // thalamic input: ticks
-      g.fillStyle = '#9ba6bd';
+      g.fillStyle = light ? dim : '#9ba6bd';
       g.fillText('Input from thalamus', 8, 10);
-      g.strokeStyle = '#e9e2b8';
+      g.strokeStyle = light ? '#7d6a1c' : '#e9e2b8';
       g.lineWidth = 1.5;
       g.beginPath();
       for (let i = 0; i < TRACE_LEN; i++) if (circuitTrace.input[at(i)]) { g.moveTo(x(i), 3); g.lineTo(x(i), 17); }
@@ -49,11 +58,12 @@ function CircuitChart() {
         const base = y0 + rowH - 7;
         // -72 mV .. +20 mV mapped onto the row
         const y = (v: number) => base - ((Math.min(v, 20) + 72) / 92) * (rowH - 12);
-        g.strokeStyle = 'rgba(255,255,255,0.07)';
+        g.strokeStyle = light ? grid : 'rgba(255,255,255,0.07)';
         g.lineWidth = 1;
         g.beginPath(); g.moveTo(0, y0 + 0.5); g.lineTo(w, y0 + 0.5); g.stroke();
         const buf = circuitTrace.v[r];
-        g.strokeStyle = tc.color;
+        const col = light ? TRACE_INK[tc.neuron] ?? tc.color : tc.color;
+        g.strokeStyle = col;
         g.lineWidth = 1.3;
         g.lineJoin = 'round';
         g.beginPath();
@@ -62,13 +72,13 @@ function CircuitChart() {
           if (i) g.lineTo(x(i), yy); else g.moveTo(x(i), yy);
         }
         g.stroke();
-        g.fillStyle = tc.color;
+        g.fillStyle = col;
         g.fillText(tc.label, 8, y0 + 9);
       });
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [theme]);
   return <canvas ref={ref} className="chart cells-chart" aria-label="Membrane potential of four cells over time" />;
 }
 

@@ -7,6 +7,7 @@ import { useSystems } from '../../state/systemsState';
 import { SYSTEMS, type BrainSystem } from '../../content/systems';
 import { structureById } from '../../content/regions';
 import { ANATOMY, type P3, type SystemAnatomy } from '../procedural/systemsAnatomy';
+import { ink, onTheme, setGlowBlend } from '../theme3d';
 import { ADDITIVE, buildTracts, haloTexture, orbMaterial, toScene, tractMaterial, VertexSampler } from '../procedural/systemsTracts';
 
 interface Marker {
@@ -31,6 +32,8 @@ interface Sys {
   anat: SystemAnatomy;
   group: THREE.Group;
   color: THREE.Color;
+  /** `color` as ink for the light stage */
+  inkColor: THREE.Color;
   mat: THREE.ShaderMaterial | null;
   orbMat: THREE.ShaderMaterial | null;
   markers: Marker[];
@@ -52,6 +55,21 @@ const STEP_SECONDS = 2.8;
 const GLASS_STRENGTH = 0.72;
 /** a cooler, greyer outline than the default so blue tracts still stand out */
 const GLASS_COLOR = '#93a5da';
+/** light stage: a faint grey-blue pencil outline, well behind the ink tracts */
+const GLASS_STRENGTH_LIGHT = 0.5;
+const GLASS_COLOR_LIGHT = '#6f7ea8';
+const WHITE = new THREE.Color(0xffffff);
+const hsl = { h: 0, s: 0, l: 0 };
+
+/** ink version of a (bright) system colour for the light stage */
+function inkOf(color: THREE.Color): THREE.Color {
+  color.getHSL(hsl);
+  // near-white colours carry no real hue: draw them as slate rather than a vivid accident
+  if (hsl.l > 0.88) return new THREE.Color('#5a6aa8');
+  // yellows and greens need to go darker than blues and reds to hold a line on white
+  const warm = hsl.h > 0.08 && hsl.h < 0.45;
+  return ink(color, warm ? 0.4 : 0.48);
+}
 
 export class SystemsLevel extends Level {
   readonly id = 'systems' as const;
@@ -71,8 +89,8 @@ export class SystemsLevel extends Level {
   private hovered: Hit | null = null;
   /** the shared cortex outline shader, toned down while this level is on stage */
   private glass: THREE.ShaderMaterial | null = null;
-  private glassColor = new THREE.Color();
   private sphere = new THREE.SphereGeometry(1, 20, 14);
+  private light = false;
 
   protected async load() {
     this.brain = await BrainModel.load((p) => this.ctx.progress(p * 0.8));
@@ -92,7 +110,7 @@ export class SystemsLevel extends Level {
     this.stage.add(group);
     const color = new THREE.Color(info.color);
     const sys: Sys = {
-      info, anat, group, color, mat: null, orbMat: null, markers: [], tags: [], pick: [], pickStep: [],
+      info, anat, group, color, inkColor: inkOf(color), mat: null, orbMat: null, markers: [], tags: [], pick: [], pickStep: [],
       opacity: 0, target: 0, focus: 0, tint: color.clone(),
     };
 
@@ -211,6 +229,7 @@ export class SystemsLevel extends Level {
     // start from a clean stage rather than fading old state
     for (const s of this.systems) s.opacity = 0;
     this.unsub.push(
+      onTheme((light) => this.setTheme(light)),
       useSystems.subscribe((s, p) => {
         if (s.mode !== p.mode) {
           const cur = this.selected();
@@ -233,8 +252,9 @@ export class SystemsLevel extends Level {
     this.unsub = [];
     this.hovered = null;
     if (this.glass) {
+      // hand the shared outline back as BrainModel wants it for the theme showing now
       this.glass.uniforms.uStrength.value = 1;
-      (this.glass.uniforms.uColor.value as THREE.Color).copy(this.glassColor);
+      (this.glass.uniforms.uColor.value as THREE.Color).set(this.light ? this.brain.glassLight : this.brain.glassDark);
     }
     this.glass = null;
     useSystems.getState().set({ playing: false });
@@ -245,6 +265,44 @@ export class SystemsLevel extends Level {
   arrived() {
     // arriving with a system already chosen (search, tour): fly to its view
     if (this.selected()) this.onSelection();
+  }
+
+  /** glow on the dark stage, ink on the light one */
+  private setTheme(light: boolean) {
+    this.light = light;
+    for (const s of this.systems) {
+      const c = light ? s.inkColor : s.color;
+      if (s.mat) {
+        setGlowBlend(s.mat, light, ADDITIVE);
+        s.mat.uniforms.uLight.value = light ? 1 : 0;
+      }
+      if (s.orbMat) {
+        setGlowBlend(s.orbMat, light, ADDITIVE);
+        s.orbMat.uniforms.uLight.value = light ? 1 : 0;
+        (s.orbMat.uniforms.uColor.value as THREE.Color).copy(c);
+      }
+      for (const m of s.markers) {
+        const dot = (m.mesh.material as THREE.MeshBasicMaterial).color;
+        // the tract shader writes its colour without output encoding, so on the light stage give the
+        // dots and discs the same raw values or they come out paler and yellower than their fibres
+        if (light) dot.setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace);
+        else dot.copy(c).lerp(WHITE, 0.35);
+        setGlowBlend(m.halo.material, light, ADDITIVE);
+        if (light) m.halo.material.color.setRGB(c.r, c.g, c.b, THREE.SRGBColorSpace);
+        else m.halo.material.color.copy(c);
+      }
+    }
+    this.applyGlass();
+    this.apply();
+    // no cross-fade between the two palettes
+    for (const s of this.systems) if (s.mat) (s.mat.uniforms.uColor.value as THREE.Color).copy(s.tint);
+  }
+
+  /** the tracts are the subject here: let the cortex outline recede behind them */
+  private applyGlass() {
+    if (!this.glass) return;
+    this.glass.uniforms.uStrength.value = this.light ? GLASS_STRENGTH_LIGHT : GLASS_STRENGTH;
+    (this.glass.uniforms.uColor.value as THREE.Color).set(this.light ? GLASS_COLOR_LIGHT : GLASS_COLOR);
   }
 
   private selected(): Sys | null {
@@ -292,10 +350,10 @@ export class SystemsLevel extends Level {
     const fast = sel?.info.id === 'fast';
     for (const s of this.systems) {
       let target = 0;
-      s.tint.copy(s.color);
+      s.tint.copy(this.light ? s.inkColor : s.color);
       if (fast) {
         // glutamate & GABA: every point-to-point pathway, in one colour
-        if (s.info.kind === 'pathways') { target = 0.75; s.tint.copy(sel!.color); }
+        if (s.info.kind === 'pathways') { target = 0.75; s.tint.copy(this.light ? sel!.inkColor : sel!.color); }
       } else if (sel) {
         if (s === sel) target = 1;
         else if (st.showAll && s.info.kind === sel.info.kind && s.info.id !== 'fast') target = s === hov ? 0.4 : 0.16;
@@ -317,18 +375,16 @@ export class SystemsLevel extends Level {
   update(dt: number) {
     this.brain.update(dt);
     if (!this.glass) {
-      // the tracts are the subject here: let the cortex outline recede behind them
       for (const o of this.brain.group.children) {
         const mat = (o as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
         if (mat?.uniforms?.uStrength) {
           this.glass = mat;
-          mat.uniforms.uStrength.value = GLASS_STRENGTH;
-          this.glassColor.copy(mat.uniforms.uColor.value as THREE.Color);
-          (mat.uniforms.uColor.value as THREE.Color).set(GLASS_COLOR);
           break;
         }
       }
     }
+    // every frame: BrainModel re-colours this shared material itself when the theme flips
+    this.applyGlass();
     const st = useSystems.getState();
     const sel = this.selected();
     this.flow += dt * st.speed * 5.5;
@@ -380,7 +436,8 @@ export class SystemsLevel extends Level {
         (m.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, s.opacity * gain);
         const hs = m.r * (m.kind === 'nucleus' ? 7 : 5.5) * size * (1 + 0.22 * beat);
         m.halo.scale.set(hs, hs, 1);
-        m.halo.material.opacity = Math.min(1, s.opacity * gain * (0.5 + 0.3 * beat));
+        // light stage: the glow becomes a faint tinted disc under the dot
+        m.halo.material.opacity = Math.min(1, s.opacity * gain * (0.5 + 0.3 * beat)) * (this.light ? 0.3 : 1);
       }
     }
   }

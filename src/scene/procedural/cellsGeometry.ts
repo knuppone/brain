@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { PART, STRIDE, type Morph, type SomaShape } from './cellsMorph';
 import { PART_COLORS, SIGNAL_COLORS } from '../../content/cells';
+import { ink, setGlowBlend } from '../theme3d';
 
 const SIDES = [0, 5, 4, 7, 0];
 
@@ -157,6 +158,21 @@ export interface SharedUniforms {
   uPartColors: { value: THREE.Color[] };
   uExc: { value: THREE.Color };
   uInh: { value: THREE.Color };
+  /** 0 = dark stage (cells glow), 1 = light stage (cells are drawn as ink that fades into the paper) */
+  uLight: { value: number };
+}
+
+const PART_LIST = [PART_COLORS.soma, PART_COLORS.dendrite, PART_COLORS.axon, PART_COLORS.myelin, PART_COLORS.terminal];
+/** part colours as ink; myelin is a pale cream that needs a hand-picked dark version */
+export const PART_INK = PART_LIST.map((c, i) => (i === 3 ? new THREE.Color('#857a62') : ink(c, 0.15)));
+export const SIGNAL_INK = { excite: new THREE.Color('#e04a00'), inhibit: new THREE.Color('#0058d6') };
+
+/** switch the uniforms every cell shares between the dark and the light stage */
+export function setSharedLight(shared: SharedUniforms, light: boolean) {
+  shared.uLight.value = light ? 1 : 0;
+  shared.uPartColors.value.forEach((c, i) => (light ? c.copy(PART_INK[i]) : c.set(PART_LIST[i])));
+  if (light) { shared.uExc.value.copy(SIGNAL_INK.excite); shared.uInh.value.copy(SIGNAL_INK.inhibit); }
+  else { shared.uExc.value.set(SIGNAL_COLORS.excite); shared.uInh.value.set(SIGNAL_COLORS.inhibit); }
 }
 
 export function makeSharedUniforms(): SharedUniforms {
@@ -165,12 +181,10 @@ export function makeSharedUniforms(): SharedUniforms {
     uParts: { value: 0 },
     uFog: { value: new THREE.Vector3(1e5, 2e5, 0) },
     uMinR: { value: 0 },
-    uPartColors: {
-      value: [PART_COLORS.soma, PART_COLORS.dendrite, PART_COLORS.axon, PART_COLORS.myelin, PART_COLORS.terminal]
-        .map((c) => new THREE.Color(c)),
-    },
+    uPartColors: { value: PART_LIST.map((c) => new THREE.Color(c)) },
     uExc: { value: new THREE.Color(SIGNAL_COLORS.excite) },
     uInh: { value: new THREE.Color(SIGNAL_COLORS.inhibit) },
+    uLight: { value: 0 },
   };
 }
 
@@ -195,7 +209,7 @@ export interface CellUniforms {
 }
 
 export function makeCellMaterial(color: string, shared: SharedUniforms, opts: { neuron: boolean; inhibitory?: boolean; wiggle?: number; maxDend: number; maxAxon: number }):
-{ material: THREE.MeshStandardMaterial; uniforms: CellUniforms } {
+{ material: THREE.MeshStandardMaterial; uniforms: CellUniforms; setLight: (light: boolean) => void } {
   const uniforms: CellUniforms = {
     uDim: { value: 1 },
     uSpikes: { value: new THREE.Vector4(-1, -1, -1, -1) },
@@ -215,7 +229,13 @@ export function makeCellMaterial(color: string, shared: SharedUniforms, opts: { 
       .replace('#include <common>', `#include <common>
         attribute float aPart; attribute float aPath; attribute float aRad;
         uniform float uTime; uniform float uMinR; uniform float uWiggle; uniform vec2 uLen;
-        varying float vPart; varying float vPath; varying float vDepth;`)
+        uniform float uLight; uniform float uFire; uniform vec3 uFlash; uniform vec4 uSpikes;
+        varying float vPart; varying float vPath; varying float vDepth;
+        float vSpikeAt(float s) {
+          if (s < 0.0) return 0.0;
+          float d = aPath - s;
+          return d > 0.0 ? exp(-d * d / 3.0) : exp(d / 9.0);
+        }`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vPart = aPart; vPath = aPath;
         if (uWiggle > 0.0) {
@@ -226,12 +246,22 @@ export function makeCellMaterial(color: string, shared: SharedUniforms, opts: { 
             sin(uTime * 0.8 + position.x * 1.9 + position.y * 1.2));
         }
         float cellDepth = -(modelViewMatrix * vec4(transformed, 1.0)).z;
-        transformed += objectNormal * max(0.0, uMinR * cellDepth - aRad);
+        float minR = uMinR * cellDepth;
+        if (uLight > 0.5) {
+          // ink cannot glow: a signal makes the stroke heavier instead
+          float vDend = 1.0 - step(1.5, aPart);
+          float vNd = clamp(aPath / uLen.x, 0.0, 1.0);
+          float sig = (1.0 - vDend) * (vSpikeAt(uSpikes.x) + vSpikeAt(uSpikes.y) + vSpikeAt(uSpikes.z) + vSpikeAt(uSpikes.w)) * 1.5
+            + vDend * (uFlash.x * (0.45 + 0.55 * exp(-vNd * 2.5)) + uFlash.y * exp(-vNd * 10.0) + uFlash.z * smoothstep(0.5, 0.8, vNd)) * 0.9
+            + vDend * uFire * exp(-vNd * 5.0);
+          minR *= 1.0 + min(sig, 2.2);
+        }
+        transformed += objectNormal * max(0.0, minR - aRad);
         vDepth = cellDepth;`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uParts; uniform float uPartMask; uniform float uDim; uniform float uFire; uniform float uHover;
-        uniform float uGlow;
+        uniform float uGlow; uniform float uLight;
         uniform vec3 uFog; uniform vec3 uFlash; uniform vec2 uLen; uniform vec4 uSpikes;
         uniform vec3 uPartColors[5]; uniform vec3 uExc; uniform vec3 uInh; uniform vec3 uSpikeColor;
         varying float vPart; varying float vPath; varying float vDepth;
@@ -244,29 +274,56 @@ export function makeCellMaterial(color: string, shared: SharedUniforms, opts: { 
         int partIdx = int(vPart + 0.5);
         vec3 partCol = uPartColors[partIdx];
         diffuseColor.rgb = mix(diffuseColor.rgb, partCol, uParts * uPartMask);
-        if (partIdx == 3) diffuseColor.rgb = mix(diffuseColor.rgb, uPartColors[3], 0.8) * 0.45;
+        if (partIdx == 3) diffuseColor.rgb = mix(diffuseColor.rgb, uPartColors[3], 0.8) * mix(0.45, 1.0, uLight);
         float lum = dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2));
-        diffuseColor.rgb = mix(lum * vec3(0.5, 0.54, 0.66), diffuseColor.rgb, uDim) * mix(0.15, 0.86, uDim);`)
+        if (uLight > 0.5) diffuseColor.rgb = mix(vec3(lum), diffuseColor.rgb, mix(0.45, 1.0, uDim));
+        else diffuseColor.rgb = mix(lum * vec3(0.5, 0.54, 0.66), diffuseColor.rgb, uDim) * mix(0.15, 0.86, uDim);`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         float isSoma = 1.0 - step(0.5, vPart);
         float isDend = 1.0 - step(1.5, vPart);
         float isAxon = 1.0 - isDend;
         float nd = clamp(vPath / uLen.x, 0.0, 1.0);
-        totalEmissiveRadiance += diffuseColor.rgb * (uGlow + uHover * 0.55) * (partIdx == 3 ? 0.45 : 1.0);
+        float dark = 1.0 - uLight;
+        totalEmissiveRadiance += diffuseColor.rgb * (uGlow + uHover * 0.55) * (partIdx == 3 ? 0.45 : 1.0) * dark;
         float pulse = spikeAt(uSpikes.x) + spikeAt(uSpikes.y) + spikeAt(uSpikes.z) + spikeAt(uSpikes.w);
         float lit = mix(0.07, 1.0, uDim);
-        totalEmissiveRadiance += uSpikeColor * pulse * isAxon * 2.4 * lit;
+        totalEmissiveRadiance += uSpikeColor * pulse * isAxon * 2.4 * lit * dark;
         float epsp = uFlash.x * isDend * (0.45 + 0.55 * exp(-nd * 2.5));
         float ipsp = uFlash.y * isDend * exp(-nd * 10.0) + uFlash.z * isDend * smoothstep(0.5, 0.8, nd);
-        totalEmissiveRadiance += (uExc * epsp * 0.85 + uInh * ipsp * 1.3) * lit;
-        totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * uFire * (isSoma * 1.8 + (isDend - isSoma) * 0.6 * exp(-nd * 5.0)) * lit;`)
+        totalEmissiveRadiance += (uExc * epsp * 0.85 + uInh * ipsp * 1.3) * lit * dark;
+        float fire = uFire * (isSoma * 1.8 + (isDend - isSoma) * 0.6 * exp(-nd * 5.0));
+        totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * fire * lit * dark;`)
       .replace('#include <opaque_fragment>', `
         float fogF = smoothstep(uFog.x, uFog.y, vDepth) * uFog.z;
-        outgoingLight = mix(outgoingLight, vec3(0.03, 0.045, 0.085), fogF);
+        if (uLight > 0.5) {
+          // ink on paper: flatter shading, signals as saturated darker colour, distance and dimming as transparency
+          vec3 inkCol = mix(min(outgoingLight, diffuseColor.rgb * 1.25), diffuseColor.rgb, 0.7) * (1.0 - 0.38 * uHover) * (1.0 - 0.5 * (uGlow - 0.2));
+          float sPulse = clamp(pulse * isAxon * 1.3, 0.0, 1.0);
+          float sExc = clamp(epsp * 0.9, 0.0, 1.0);
+          float sInh = clamp(ipsp * 1.2, 0.0, 1.0);
+          float sFire = clamp(fire, 0.0, 1.0);
+          inkCol = mix(inkCol, uExc, sExc);
+          inkCol = mix(inkCol, uInh, sInh);
+          inkCol = mix(inkCol, uSpikeColor, max(sPulse, sFire));
+          float sig = max(max(sPulse, sFire), max(sExc, sInh)) * lit;
+          outgoingLight = inkCol;
+          float a = mix(0.1, 1.0, uDim * uDim) * (1.0 - fogF);
+          diffuseColor.a = mix(a, 1.0, sig * 0.7);
+        } else {
+          outgoingLight = mix(outgoingLight, vec3(0.03, 0.045, 0.085), fogF);
+        }
         #include <opaque_fragment>`);
   };
   material.customProgramCacheKey = () => 'cells-cell-v1';
-  return { material, uniforms };
+  const base = new THREE.Color(color), inked = ink(color, 0.14);
+  const spikeDark = new THREE.Color(opts.inhibitory ? '#9fe0ff' : '#ffe2b0');
+  const spikeInk = new THREE.Color(opts.inhibitory ? '#0046c8' : '#d42a00');
+  const setLight = (light: boolean) => {
+    material.color.copy(light ? inked : base);
+    uniforms.uSpikeColor.value.copy(light ? spikeInk : spikeDark);
+    if (material.transparent !== light) { material.transparent = light; material.needsUpdate = true; }
+  };
+  return { material, uniforms, setLight };
 }
 
 /** tiny instanced bumps along dendrites (specimens) */
@@ -312,7 +369,7 @@ export class GlowPoints {
     g.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
     this.mat = new THREE.ShaderMaterial({
-      uniforms: { uScale: { value: 500 }, uMinPx: { value: 5 } },
+      uniforms: { uScale: { value: 500 }, uMinPx: { value: 5 }, uLight: { value: 0 } },
       vertexShader: `
         attribute vec4 aColor; attribute float aSize; uniform float uScale; uniform float uMinPx;
         varying vec4 vColor;
@@ -323,10 +380,12 @@ export class GlowPoints {
           vColor = aColor;
         }`,
       fragmentShader: `
-        varying vec4 vColor;
+        varying vec4 vColor; uniform float uLight;
         void main() {
           float r = length(gl_PointCoord - 0.5) * 2.0;
           float a = pow(max(0.0, 1.0 - r), 2.2);
+          // light stage: a soft blot of ink instead of added light
+          if (uLight > 0.5) { gl_FragColor = vec4(vColor.rgb, min(0.9, pow(max(0.0, 1.0 - r), 1.5) * vColor.a * 0.8)); return; }
           gl_FragColor = vec4(vColor.rgb * a * vColor.a + vec3(1.0) * pow(a, 6.0) * vColor.a * 0.5, 1.0);
         }`,
       // add light without touching the canvas alpha (the page background shows through the canvas)
@@ -337,6 +396,14 @@ export class GlowPoints {
     this.points = new THREE.Points(g, this.mat);
     this.points.frustumCulled = false;
     this.points.renderOrder = 5;
+  }
+
+  setLight(light: boolean) {
+    this.mat.uniforms.uLight.value = light ? 1 : 0;
+    setGlowBlend(this.mat, light, {
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
+    });
   }
 
   begin() { this.n = 0; }

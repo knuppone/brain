@@ -11,10 +11,12 @@ import {
   buildColumn, buildSpecimen, depthY, PIA_Y, SLAB, SPIKE_SPEED, type Column, type Specimen,
 } from '../procedural/cellsColumn';
 import {
-  buildCellGeometry, buildSpineMesh, buildTubeSet, GlowPoints, makeCellMaterial, makeSharedUniforms, somaGeometry,
+  buildCellGeometry, buildSpineMesh, buildTubeSet, GlowPoints, makeCellMaterial, makeSharedUniforms, PART_INK, setSharedLight,
+  SIGNAL_INK, somaGeometry,
   type CellUniforms,
 } from '../procedural/cellsGeometry';
 import { PART, type MorphKind, type Route } from '../procedural/cellsMorph';
+import { ink, isLight, onTheme } from '../theme3d';
 
 /** simulated milliseconds per real second (slow motion) */
 const SIM_RATE = 15;
@@ -96,6 +98,9 @@ export class CellsLevel extends Level {
   private rbc!: THREE.InstancedMesh;
   private capillary!: THREE.Mesh;
   private unsub: (() => void)[] = [];
+  /** theme currently applied to the 3D objects, and everything that has to follow it */
+  private light = false;
+  private themers: ((light: boolean) => void)[] = [];
 
   private pulses: Pulse[] = [];
   private sparks: Spark[] = [];
@@ -119,12 +124,31 @@ export class CellsLevel extends Level {
   private dendColor = new THREE.Color(PART_COLORS.dendrite);
   private white = new THREE.Color('#fff3dc');
 
+  /** register something that looks different on the light stage; it is brought up to date at once */
+  private themed(fn: (light: boolean) => void) {
+    fn(this.light);
+    this.themers.push(fn);
+  }
+
+  private applyTheme(light: boolean) {
+    this.light = light;
+    setSharedLight(this.shared, light);
+    this.glow.setLight(light);
+    // sprites: added light on the dark stage, blots of saturated ink on the light one
+    this.excColor.copy(light ? SIGNAL_INK.excite : new THREE.Color(SIGNAL_COLORS.excite));
+    this.inhColor.copy(light ? SIGNAL_INK.inhibit : new THREE.Color(SIGNAL_COLORS.inhibit));
+    this.dendColor.copy(light ? PART_INK[1] : new THREE.Color(PART_COLORS.dendrite));
+    this.white.set(light ? '#d42a00' : '#fff3dc');
+    for (const fn of this.themers) fn(light);
+  }
+
   // ------------------------------------------------------------------ build
 
   protected async load() {
     const tick = () => new Promise<void>((r) => setTimeout(r, 0));
     this.ctx.progress(0.1);
     await tick();
+    this.light = isLight();
     this.column = buildColumn();
     this.ctx.progress(0.5);
     await tick();
@@ -136,10 +160,11 @@ export class CellsLevel extends Level {
       const type = c.typeId ? cellTypeById.get(c.typeId)! : null;
       const neuron = c.neuron >= 0 ? this.column.spec.neurons[c.neuron] : null;
       const color = type?.color ?? '#d8d2ad';
-      const { material, uniforms } = makeCellMaterial(color, this.shared, {
+      const { material, uniforms, setLight } = makeCellMaterial(color, this.shared, {
         neuron: !!neuron, inhibitory: neuron?.inhibitory, wiggle: c.kind === 'microglia' ? 0.5 : 0,
         maxDend: c.morph.maxDend, maxAxon: c.morph.maxAxon,
       });
+      this.themed(setLight);
       const mesh = new THREE.Mesh(buildCellGeometry(c.morph), material);
       mesh.frustumCulled = false;
       this.columnGroup.add(mesh);
@@ -165,7 +190,9 @@ export class CellsLevel extends Level {
     el.className = cls;
     if (color) {
       const i = document.createElement('i');
-      i.style.background = color;
+      // pale swatches vanish on a pale label: use the ink version of the colour there
+      const inked = color === PART_COLORS.myelin ? '#857a62' : `#${ink(color, 0.16).getHexString()}`;
+      this.themed((light) => { i.style.background = light ? inked : color; });
       el.appendChild(i);
     }
     el.appendChild(document.createTextNode(text));
@@ -189,13 +216,15 @@ export class CellsLevel extends Level {
       const y0 = depthY(l.top), y1 = depthY(l.bottom);
       rect(y1);
       if (i % 2 === 1 || l.id === 'WM') {
-        const wall = new THREE.Mesh(
-          new THREE.PlaneGeometry(w, y0 - y1),
-          new THREE.MeshBasicMaterial({
-            color: l.id === 'WM' ? 0xcfc9b4 : 0x7f9bd8, transparent: true, opacity: l.id === 'WM' ? 0.05 : 0.035,
-            depthWrite: false, side: THREE.DoubleSide,
-          }),
-        );
+        const isWm = l.id === 'WM';
+        const wallMat = new THREE.MeshBasicMaterial({
+          color: isWm ? 0xcfc9b4 : 0x7f9bd8, transparent: true, opacity: isWm ? 0.05 : 0.035, depthWrite: false, side: THREE.DoubleSide,
+        });
+        this.themed((light) => {
+          wallMat.color.set(light ? (isWm ? 0x8d7c4c : 0x3f5f9f) : (isWm ? 0xcfc9b4 : 0x7f9bd8));
+          wallMat.opacity = light ? (isWm ? 0.1 : 0.065) : (isWm ? 0.05 : 0.035);
+        });
+        const wall = new THREE.Mesh(new THREE.PlaneGeometry(w, y0 - y1), wallMat);
         wall.position.set(0, (y0 + y1) / 2, -d / 2);
         this.columnGroup.add(wall);
       }
@@ -207,7 +236,9 @@ export class CellsLevel extends Level {
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) lines.push((sx * w) / 2, PIA_Y, (sz * d) / 2, (sx * w) / 2, -h / 2, (sz * d) / 2);
     const lg = new THREE.BufferGeometry();
     lg.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-    this.columnGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x9fb4dc, transparent: true, opacity: 0.13, depthWrite: false })));
+    const frameMat = new THREE.LineBasicMaterial({ color: 0x9fb4dc, transparent: true, opacity: 0.13, depthWrite: false });
+    this.themed((light) => { frameMat.color.set(light ? 0x3c4f78 : 0x9fb4dc); frameMat.opacity = light ? 0.26 : 0.13; });
+    this.columnGroup.add(new THREE.LineSegments(lg, frameMat));
 
     const pt = this.tag(narrow ? 'Pia' : 'Pia mater · brain surface');
     pt.center.set(0, 0.5);
@@ -228,9 +259,11 @@ export class CellsLevel extends Level {
     const pp = piaGeo.getAttribute('position');
     for (let i = 0; i < pp.count; i++) pp.setY(i, 0.9 * Math.sin(pp.getX(i) * 0.13) * Math.cos(pp.getZ(i) * 0.21));
     piaGeo.computeVertexNormals();
-    const pia = new THREE.Mesh(piaGeo, new THREE.MeshStandardMaterial({
+    const piaMat = new THREE.MeshStandardMaterial({
       color: 0xe2a9a4, transparent: true, opacity: 0.2, roughness: 0.4, side: THREE.DoubleSide, depthWrite: false,
-    }));
+    });
+    this.themed((light) => { piaMat.color.set(light ? 0xc2605c : 0xe2a9a4); piaMat.opacity = light ? 0.26 : 0.2; });
+    const pia = new THREE.Mesh(piaGeo, piaMat);
     pia.position.y = PIA_Y + 1.2;
     this.columnGroup.add(pia);
 
@@ -241,6 +274,7 @@ export class CellsLevel extends Level {
     ]);
     const wm = makeCellMaterial('#8f97ab', this.shared, { neuron: false, maxDend: 1, maxAxon: 1 });
     wm.uniforms.uGlow.value = 0.18;
+    this.themed(wm.setLight);
     const wmMesh = new THREE.Mesh(wmGeo, wm.material);
     wmMesh.frustumCulled = false;
     this.columnGroup.add(wmMesh);
@@ -265,6 +299,14 @@ export class CellsLevel extends Level {
     );
     this.rbc.frustumCulled = false;
     this.columnGroup.add(this.capillary, this.rbc);
+    this.themed((light) => {
+      // emissive lifts the blood out of the dark; on paper it only bleaches it
+      const cm = this.capillary.material as THREE.MeshStandardMaterial, rm = this.rbc.material as THREE.MeshStandardMaterial;
+      cm.emissive.set(light ? 0x000000 : 0x4a0f18);
+      cm.color.set(light ? 0xc23a48 : 0xd0555f);
+      cm.opacity = light ? 0.42 : 0.34;
+      rm.emissive.set(light ? 0x000000 : 0x5a0d14);
+    });
     const csk: number[] = [];
     for (const p of this.column.capillary) csk.push(p.x, p.y, p.z, 1.1);
     this.cells.push({
@@ -289,9 +331,11 @@ export class CellsLevel extends Level {
     }
     const hg = new THREE.BufferGeometry();
     hg.setAttribute('position', new THREE.BufferAttribute(hp, 3));
-    const haze = new THREE.Points(hg, new THREE.PointsMaterial({
+    const hazeMat = new THREE.PointsMaterial({
       color: 0x7f97c8, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.3, depthWrite: false,
-    }));
+    });
+    this.themed((light) => { hazeMat.color.set(light ? 0x3b4a6e : 0x7f97c8); hazeMat.opacity = light ? 0.24 : 0.3; });
+    const haze = new THREE.Points(hg, hazeMat);
     this.columnGroup.add(haze);
 
     // "label parts" tags on one big layer V pyramidal cell
@@ -323,7 +367,7 @@ export class CellsLevel extends Level {
     const spec = buildSpecimen(typeId);
     const m = spec.morph;
     const group = new THREE.Group();
-    const { material, uniforms } = makeCellMaterial(type.color, this.shared, {
+    const { material, uniforms, setLight } = makeCellMaterial(type.color, this.shared, {
       neuron: type.isNeuron, inhibitory: type.transmitter?.effect === 'inhibitory', wiggle: typeId === 'microglia' ? 0.5 : 0,
       maxDend: m.maxDend, maxAxon: m.maxAxon,
     });
@@ -332,6 +376,12 @@ export class CellsLevel extends Level {
     group.add(mesh);
     const spines = buildSpineMesh(m, type.color);
     if (spines) group.add(spines);
+    const color = new THREE.Color(type.color);
+    this.themed((light) => {
+      setLight(light);
+      if (light) ink(type.color, 0.14, color); else color.set(type.color);
+      if (spines) (spines.material as THREE.MeshStandardMaterial).emissiveIntensity = light ? 0 : 0.25;
+    });
 
     for (const g of spec.ghosts) {
       const mat = new THREE.MeshStandardMaterial({ color: g.color, roughness: 0.6, transparent: true, opacity: g.kind === 'soma' ? 0.55 : 0.6 });
@@ -385,11 +435,13 @@ export class CellsLevel extends Level {
     }
     const lg = new THREE.BufferGeometry();
     lg.setAttribute('position', new THREE.Float32BufferAttribute(lineVerts, 3));
-    group.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthTest: false })));
+    const leaderMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.38, depthTest: false });
+    this.themed((light) => { leaderMat.color.set(light ? 0x1c2436 : 0xffffff); leaderMat.opacity = light ? 0.5 : 0.38; });
+    group.add(new THREE.LineSegments(lg, leaderMat));
 
     group.visible = false;
     this.specimenGroup.add(group);
-    s = { group, u: uniforms, spec, half, center, spines, color: new THREE.Color(type.color) };
+    s = { group, u: uniforms, spec, half, center, spines, color };
     this.specimens.set(typeId, s);
     return s;
   }
@@ -419,6 +471,7 @@ export class CellsLevel extends Level {
       }, 1700);
     }
     this.unsub.push(
+      onTheme((light) => this.applyTheme(light)),
       useCells.subscribe((s, p) => {
         if (s.stimTick !== this.lastStim) {
           this.lastStim = s.stimTick;
